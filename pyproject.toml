@@ -1,6 +1,6 @@
 [project]
 name = "biaspay"
-version = "1.0.0"
+version = "1.0.1"
 description = "Python client for the Bias API"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -17,6 +17,8 @@ dependencies = ["httpx>=0.27", "pydantic>=2.7", "typing-extensions>=4.10"]
 [project.urls]
 Homepage = "https://biaspay.com"
 Documentation = "https://docs.biaspay.com"
+Repository = "https://github.com/BiasPay/python-sdk"
+Issues = "https://github.com/BiasPay/python-sdk/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "respx>=0.21", "ruff>=0.6"]

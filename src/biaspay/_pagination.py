@@ -20,7 +20,7 @@ from typing import (
     TypeVar,
 )
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -33,7 +33,7 @@ class SyncPage(BaseModel, Generic[T]):
 
     object: str = "list"
     has_more: bool = False
-    items: List[T] = []
+    items: List[T] = Field(default_factory=list)
 
     # Set by the resource layer so auto-paging can fetch the next page.
     _fetch_next: Callable[[str], "SyncPage[T]"] = None  # type: ignore[assignment]

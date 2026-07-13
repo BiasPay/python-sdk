@@ -24,6 +24,13 @@ class List(_Model):
     items: t.List[t.Any]
 
 
+class AddressAutocompleteSuggestion(_Model):
+    label: str
+    secondary_label: str
+    full_address: str
+    components: t.Dict[str, t.Any]
+
+
 class InvalidRequestError(_Model):
     object: t.Literal["error"]
     error: t.Dict[str, t.Any]
@@ -44,6 +51,8 @@ class CheckoutSessionExpand(_Model):
     customer: t.Optional[t.Union[bool, "CustomerExpand"]] = None
     invoice: t.Optional[t.Union[bool, "InvoiceExpand"]] = None
     line_items: t.Optional[t.Union[bool, "LineItemExpand"]] = None
+    shipping_cost: t.Optional[t.Dict[str, t.Any]] = None
+    shipping_options: t.Optional[t.Dict[str, t.Any]] = None
 
 
 class PaymentExpand(_Model):
@@ -112,6 +121,10 @@ class CheckoutSession(_Model):
     client_secret: str
     customer: t.Optional[t.Union[str, "Customer"]]
     customer_details: t.Dict[str, t.Any]
+    shipping_cost: t.Optional[t.Dict[str, t.Any]]
+    shipping_details: t.Optional[t.Dict[str, t.Any]]
+    billing_details: t.Optional[t.Dict[str, t.Any]]
+    shipping_options: t.List[t.Dict[str, t.Any]]
     payments: t.Optional[t.List["Payment"]]
     invoice: t.Optional[t.Union[str, "Invoice"]]
     line_items: t.Optional[t.List["LineItem"]]
@@ -120,6 +133,7 @@ class CheckoutSession(_Model):
     payment_method_types: t.List[t.Literal["card", "us_bank_account"]]
     status: "SessionStatus"
     submit_label: "SessionSubmitLabel"
+    success_url: t.Optional[str]
 
 
 class Customer(_Model):
@@ -143,6 +157,29 @@ class ExternalSync(_Model):
 
 class Metadata(_Model):
     pass
+
+
+class ShippingRate(_Model):
+    object: t.Literal["shipping_rate"]
+    live: bool
+    id: str
+    created_at: int
+    updated_at: int
+    deleted: bool
+    active: bool
+    display_name: str
+    amount: int
+    delivery_estimate: t.Optional[t.Dict[str, t.Any]]
+    metadata: "Metadata"
+
+
+class Address(_Model):
+    line1: t.Optional[str]
+    line2: t.Optional[str]
+    city: t.Optional[str]
+    state: t.Optional[str]
+    postal_code: t.Optional[str]
+    country: t.Optional["CountryCode"]
 
 
 class Payment(_Model):
@@ -237,7 +274,7 @@ class Invoice(_Model):
     id: str
     created_at: int
     updated_at: int
-    billing_address: t.Optional["Address"]
+    billing_address: "Address"
     customer: t.Union[str, "Customer"]
     metadata: "Metadata"
     payments: t.Optional[t.List["Payment"]]
@@ -245,13 +282,13 @@ class Invoice(_Model):
     number: str
     shipping_details: t.Dict[str, t.Any]
     status: "InvoiceStatus"
-    due_date: t.Optional[int]
+    due_at: t.Optional[int]
     days_until_due: t.Optional[int]
     default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]]
     subtotal: int
-    total_taxes: int
+    tax_total: int
     total: int
-    amount_due: int
+    amount_billed: int
     amount_paid: int
     external_sync: t.Optional["ExternalSync"]
     attachments: t.Optional[t.List["File"]]
@@ -260,15 +297,6 @@ class Invoice(_Model):
     footer: t.Optional[str]
     custom_fields: t.Optional[t.Dict[str, t.Any]]
     payment_link: t.Optional[str]
-
-
-class Address(_Model):
-    line1: t.Optional[str]
-    line2: t.Optional[str]
-    city: t.Optional[str]
-    state: t.Optional[str]
-    postal_code: t.Optional[str]
-    country: t.Optional["CountryCode"]
 
 
 class LineItem(_Model):
@@ -345,7 +373,7 @@ class CreditNote(_Model):
     status: "CreditNoteStatus"
     line_items: t.Optional[t.List["CreditNoteLineItem"]]
     subtotal: int
-    total_taxes: int
+    tax_total: int
     total: int
     memo: t.Optional[str]
     metadata: "Metadata"
@@ -460,6 +488,7 @@ class Event(_Model):
             "Price",
             "Product",
             "Refund",
+            "ShippingRate",
         ]
     ]
     state: t.Optional[
@@ -476,6 +505,7 @@ class Event(_Model):
             "Price",
             "Product",
             "Refund",
+            "ShippingRate",
         ]
     ]
     request: t.Optional[t.Union[str, "Request"]]
@@ -542,7 +572,7 @@ class FileFilters(_Model):
 class InvoiceFilters(_Model):
     created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     updated_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    due_date: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    due_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     status: t.Optional[t.Union["InvoiceStatus", t.Dict[str, t.Any]]] = None
 
@@ -561,16 +591,18 @@ class PaymentMethodCardCreate(_Model):
 
 class PaymentMethodCreateBillingDetails(_Model):
     name: t.Optional[str] = None
+    email: t.Optional[str] = None
+    phone: t.Optional[str] = None
     address: t.Optional["PaymentMethodCreateBillingAddress"] = None
 
 
 class PaymentMethodCreateBillingAddress(_Model):
-    city: t.Optional[str] = None
-    country: t.Optional["CountryCode"] = None
     line1: t.Optional[str] = None
     line2: t.Optional[str] = None
-    postal_code: t.Optional[str] = None
+    city: t.Optional[str] = None
     state: t.Optional[str] = None
+    postal_code: t.Optional[str] = None
+    country: t.Optional["CountryCode"] = None
 
 
 class CardDetails(_Model):
@@ -660,6 +692,17 @@ class RefundFilters(_Model):
     status: t.Optional[t.Union["RefundStatus", t.Dict[str, t.Any]]] = None
 
 
+class ShippingRateExpand(_Model):
+    pass
+
+
+class ShippingRateFilters(_Model):
+    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    active: t.Optional["BooleanFilter"] = None
+    display_name: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    amount: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+
+
 class RequestFilters(_Model):
     created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     url: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
@@ -679,47 +722,6 @@ class Stats(_Model):
 # --- Aliases ---
 Error = t.Union[
     "ServerError", "PaymentError", "InvalidRequestError", "IdempotencyError", "RateLimitError"
-]
-SessionDeviceType = t.Literal["mobile", "desktop"]
-PaymentDeclineCode = t.Literal[
-    "authentication_required",
-    "debit_not_authorized",
-    "call_issuer",
-    "card_not_supported",
-    "card_velocity_exceeded",
-    "account_closed",
-    "currency_not_supported",
-    "do_not_honor",
-    "duplicate_transaction",
-    "expired_card",
-    "fraudulent",
-    "generic_decline",
-    "incorrect_cvc",
-    "incorrect_number",
-    "incorrect_postal_code",
-    "incorrect_address",
-    "insufficient_funds",
-    "invalid_account",
-    "issuer_not_available",
-    "lost_card",
-    "new_account_information_available",
-    "no_action_taken",
-    "no_account",
-    "not_permitted",
-    "offline_pin_required",
-    "online_or_offline_pin_required",
-    "pickup_card",
-    "pin_try_exceeded",
-    "processing_error",
-    "reenter_transaction",
-    "restricted_card",
-    "security_violation",
-    "service_not_allowed",
-    "stolen_card",
-    "stop_payment_order",
-    "transaction_not_allowed",
-    "try_again_later",
-    "withdrawal_count_limit_exceeded",
 ]
 CountryCode = t.Literal[
     "AC",
@@ -975,6 +977,48 @@ CountryCode = t.Literal[
     "ZM",
     "ZW",
 ]
+SessionDeviceType = t.Literal["mobile", "desktop"]
+DeliveryEstimateUnit = t.Literal["business_day", "day", "month", "week"]
+PaymentDeclineCode = t.Literal[
+    "authentication_required",
+    "debit_not_authorized",
+    "call_issuer",
+    "card_not_supported",
+    "card_velocity_exceeded",
+    "account_closed",
+    "currency_not_supported",
+    "do_not_honor",
+    "duplicate_transaction",
+    "expired_card",
+    "fraudulent",
+    "generic_decline",
+    "incorrect_cvc",
+    "incorrect_number",
+    "incorrect_postal_code",
+    "incorrect_address",
+    "insufficient_funds",
+    "invalid_account",
+    "issuer_not_available",
+    "lost_card",
+    "new_account_information_available",
+    "no_action_taken",
+    "no_account",
+    "not_permitted",
+    "offline_pin_required",
+    "online_or_offline_pin_required",
+    "pickup_card",
+    "pin_try_exceeded",
+    "processing_error",
+    "reenter_transaction",
+    "restricted_card",
+    "security_violation",
+    "service_not_allowed",
+    "stolen_card",
+    "stop_payment_order",
+    "transaction_not_allowed",
+    "try_again_later",
+    "withdrawal_count_limit_exceeded",
+]
 PaymentStatus = t.Literal["requires_capture", "processing", "canceled", "succeeded", "failed"]
 DisputeStatus = t.Literal["needs_response", "under_review", "won", "lost"]
 DisputeReason = t.Literal[
@@ -1044,6 +1088,8 @@ EventType = t.Literal[
     "credit_note.created",
     "credit_note.updated",
     "credit_note.voided",
+    "shipping_rate.created",
+    "shipping_rate.updated",
 ]
 EventContext = t.Dict[str, t.Any]
 EventObjectType = t.Literal[
@@ -1059,6 +1105,7 @@ EventObjectType = t.Literal[
     "discount",
     "invoice",
     "credit_note",
+    "shipping_rate",
 ]
 BooleanFilter = t.Union[bool, t.Dict[str, t.Any]]
 PaymentMethodCreate = t.Union[
@@ -1078,11 +1125,31 @@ StatisticTimeInterval = t.Literal[
 
 
 # --- Resources ---
+class CheckoutAddressResource(SyncResource):
+    def autocomplete(
+        self, *, input: t.Optional[str] = None, country: t.Optional["CountryCode"] = None
+    ) -> t.List["AddressAutocompleteSuggestion"]:
+        return self._request(
+            "GET",
+            "/v1/checkout/address/autocomplete",
+            cast_to=None,
+            query={"input": input, "country": country},
+        )
+
+
+class CheckoutResource(SyncResource):
+    address: CheckoutAddressResource
+
+    def __init__(self, client):
+        super().__init__(client)
+        self.address = CheckoutAddressResource(client)
+
+
 class CheckoutSessionsResource(SyncResource):
     def public_key(self, id: str) -> t.Dict[str, t.Any]:
         return self._request(
             "GET",
-            "/v1/checkout/sessions/{id}/public_key",
+            "/v1/checkout_sessions/{id}/public_key",
             cast_to=None,
             path_params={"id": id},
         )
@@ -1092,7 +1159,7 @@ class CheckoutSessionsResource(SyncResource):
     ) -> "CheckoutSession":
         return self._request(
             "GET",
-            "/v1/checkout/sessions/{id}",
+            "/v1/checkout_sessions/{id}",
             cast_to=CheckoutSession,
             path_params={"id": id},
             query={"expand": expand},
@@ -1103,22 +1170,32 @@ class CheckoutSessionsResource(SyncResource):
         id: str,
         *,
         expand: t.Optional["CheckoutSessionExpand"] = None,
+        amount: t.Optional[int] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        billing_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
+        shipping_rate: t.Optional[str] = None,
         dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
         metadata: t.Optional["MetadataInput"] = None,
     ) -> "CheckoutSession":
         return self._request(
             "PATCH",
-            "/v1/checkout/sessions/{id}",
+            "/v1/checkout_sessions/{id}",
             cast_to=CheckoutSession,
             path_params={"id": id},
             query={"expand": expand},
             body={
+                "amount": amount,
                 "line_items": line_items,
                 "customer": customer,
                 "customer_details": customer_details,
+                "shipping_details": shipping_details,
+                "billing_details": billing_details,
+                "shipping_options": shipping_options,
+                "shipping_rate": shipping_rate,
                 "dual_pricing": dual_pricing,
                 "metadata": metadata,
             },
@@ -1135,7 +1212,7 @@ class CheckoutSessionsResource(SyncResource):
     ) -> SyncPage["CheckoutSession"]:
         return self._request_page(
             "GET",
-            "/v1/checkout/sessions",
+            "/v1/checkout_sessions",
             item_type=CheckoutSession,
             query={
                 "expand": expand,
@@ -1154,16 +1231,19 @@ class CheckoutSessionsResource(SyncResource):
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
         invoice: t.Optional[str] = None,
         dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
         metadata: t.Optional["MetadataInput"] = None,
         mode: t.Optional["SessionMode"] = None,
         payment_method_types: t.Optional[t.List[t.Literal["card", "us_bank_account"]]] = None,
         submit_label: t.Optional["SessionSubmitLabel"] = None,
+        success_url: t.Optional[str] = None,
     ) -> "CheckoutSession":
         return self._request(
             "POST",
-            "/v1/checkout/sessions",
+            "/v1/checkout_sessions",
             cast_to=CheckoutSession,
             query={"expand": expand},
             body={
@@ -1171,30 +1251,25 @@ class CheckoutSessionsResource(SyncResource):
                 "line_items": line_items,
                 "customer": customer,
                 "customer_details": customer_details,
+                "shipping_details": shipping_details,
+                "shipping_options": shipping_options,
                 "invoice": invoice,
                 "dual_pricing": dual_pricing,
                 "metadata": metadata,
                 "mode": mode,
                 "payment_method_types": payment_method_types,
                 "submit_label": submit_label,
+                "success_url": success_url,
             },
         )
 
     def expire(self, id: str) -> "CheckoutSession":
         return self._request(
             "POST",
-            "/v1/checkout/sessions/{id}/expire",
+            "/v1/checkout_sessions/{id}/expire",
             cast_to=CheckoutSession,
             path_params={"id": id},
         )
-
-
-class CheckoutResource(SyncResource):
-    sessions: CheckoutSessionsResource
-
-    def __init__(self, client):
-        super().__init__(client)
-        self.sessions = CheckoutSessionsResource(client)
 
 
 class CreditNotesResource(SyncResource):
@@ -1612,7 +1687,7 @@ class InvoicesResource(SyncResource):
         billing_address: t.Optional[t.Dict[str, t.Any]] = None,
         shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_date: t.Optional[int] = None,
+        due_at: t.Optional[int] = None,
         days_until_due: t.Optional[int] = None,
         metadata: t.Optional["MetadataInput"] = None,
         attachments: t.Optional[t.List[str]] = None,
@@ -1631,7 +1706,7 @@ class InvoicesResource(SyncResource):
                 "billing_address": billing_address,
                 "shipping_details": shipping_details,
                 "line_items": line_items,
-                "due_date": due_date,
+                "due_at": due_at,
                 "days_until_due": days_until_due,
                 "metadata": metadata,
                 "attachments": attachments,
@@ -1690,7 +1765,7 @@ class InvoicesResource(SyncResource):
         billing_address: t.Optional[t.Dict[str, t.Any]] = None,
         shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_date: t.Optional[int] = None,
+        due_at: t.Optional[int] = None,
         days_until_due: t.Optional[int] = None,
         metadata: t.Optional["MetadataInput"] = None,
         attachments: t.Optional[t.List[str]] = None,
@@ -1710,7 +1785,7 @@ class InvoicesResource(SyncResource):
                 "billing_address": billing_address,
                 "shipping_details": shipping_details,
                 "line_items": line_items,
-                "due_date": due_date,
+                "due_at": due_at,
                 "days_until_due": days_until_due,
                 "metadata": metadata,
                 "attachments": attachments,
@@ -2161,11 +2236,110 @@ class RequestsResource(SyncResource):
         )
 
 
+class ShippingRatesResource(SyncResource):
+    def create(
+        self,
+        *,
+        expand: t.Optional["ShippingRateExpand"] = None,
+        display_name: t.Optional[str] = None,
+        amount: t.Optional[int] = None,
+        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
+        metadata: t.Optional["MetadataInput"] = None,
+    ) -> "ShippingRate":
+        return self._request(
+            "POST",
+            "/v1/shipping_rates",
+            cast_to=ShippingRate,
+            query={"expand": expand},
+            body={
+                "display_name": display_name,
+                "amount": amount,
+                "delivery_estimate": delivery_estimate,
+                "metadata": metadata,
+            },
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional["ShippingRateExpand"] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[float] = None,
+        filters: t.Optional[t.Union["ShippingRateFilters", t.Dict[str, t.Any]]] = None,
+    ) -> SyncPage["ShippingRate"]:
+        return self._request_page(
+            "GET",
+            "/v1/shipping_rates",
+            item_type=ShippingRate,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    def get(self, id: str, *, expand: t.Optional["ShippingRateExpand"] = None) -> "ShippingRate":
+        return self._request(
+            "GET",
+            "/v1/shipping_rates/{id}",
+            cast_to=ShippingRate,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    def update(
+        self,
+        id: str,
+        *,
+        expand: t.Optional["ShippingRateExpand"] = None,
+        active: t.Optional[bool] = None,
+        display_name: t.Optional[str] = None,
+        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
+        metadata: t.Optional["MetadataInput"] = None,
+    ) -> "ShippingRate":
+        return self._request(
+            "PATCH",
+            "/v1/shipping_rates/{id}",
+            cast_to=ShippingRate,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={
+                "active": active,
+                "display_name": display_name,
+                "delivery_estimate": delivery_estimate,
+                "metadata": metadata,
+            },
+        )
+
+
+class AsyncCheckoutAddressResource(AsyncResource):
+    async def autocomplete(
+        self, *, input: t.Optional[str] = None, country: t.Optional["CountryCode"] = None
+    ) -> t.List["AddressAutocompleteSuggestion"]:
+        return await self._request(
+            "GET",
+            "/v1/checkout/address/autocomplete",
+            cast_to=None,
+            query={"input": input, "country": country},
+        )
+
+
+class AsyncCheckoutResource(AsyncResource):
+    address: AsyncCheckoutAddressResource
+
+    def __init__(self, client):
+        super().__init__(client)
+        self.address = AsyncCheckoutAddressResource(client)
+
+
 class AsyncCheckoutSessionsResource(AsyncResource):
     async def public_key(self, id: str) -> t.Dict[str, t.Any]:
         return await self._request(
             "GET",
-            "/v1/checkout/sessions/{id}/public_key",
+            "/v1/checkout_sessions/{id}/public_key",
             cast_to=None,
             path_params={"id": id},
         )
@@ -2175,7 +2349,7 @@ class AsyncCheckoutSessionsResource(AsyncResource):
     ) -> "CheckoutSession":
         return await self._request(
             "GET",
-            "/v1/checkout/sessions/{id}",
+            "/v1/checkout_sessions/{id}",
             cast_to=CheckoutSession,
             path_params={"id": id},
             query={"expand": expand},
@@ -2186,22 +2360,32 @@ class AsyncCheckoutSessionsResource(AsyncResource):
         id: str,
         *,
         expand: t.Optional["CheckoutSessionExpand"] = None,
+        amount: t.Optional[int] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        billing_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
+        shipping_rate: t.Optional[str] = None,
         dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
         metadata: t.Optional["MetadataInput"] = None,
     ) -> "CheckoutSession":
         return await self._request(
             "PATCH",
-            "/v1/checkout/sessions/{id}",
+            "/v1/checkout_sessions/{id}",
             cast_to=CheckoutSession,
             path_params={"id": id},
             query={"expand": expand},
             body={
+                "amount": amount,
                 "line_items": line_items,
                 "customer": customer,
                 "customer_details": customer_details,
+                "shipping_details": shipping_details,
+                "billing_details": billing_details,
+                "shipping_options": shipping_options,
+                "shipping_rate": shipping_rate,
                 "dual_pricing": dual_pricing,
                 "metadata": metadata,
             },
@@ -2218,7 +2402,7 @@ class AsyncCheckoutSessionsResource(AsyncResource):
     ) -> AsyncPaginator["CheckoutSession"]:
         return self._request_page(
             "GET",
-            "/v1/checkout/sessions",
+            "/v1/checkout_sessions",
             item_type=CheckoutSession,
             query={
                 "expand": expand,
@@ -2237,16 +2421,19 @@ class AsyncCheckoutSessionsResource(AsyncResource):
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
         invoice: t.Optional[str] = None,
         dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
         metadata: t.Optional["MetadataInput"] = None,
         mode: t.Optional["SessionMode"] = None,
         payment_method_types: t.Optional[t.List[t.Literal["card", "us_bank_account"]]] = None,
         submit_label: t.Optional["SessionSubmitLabel"] = None,
+        success_url: t.Optional[str] = None,
     ) -> "CheckoutSession":
         return await self._request(
             "POST",
-            "/v1/checkout/sessions",
+            "/v1/checkout_sessions",
             cast_to=CheckoutSession,
             query={"expand": expand},
             body={
@@ -2254,30 +2441,25 @@ class AsyncCheckoutSessionsResource(AsyncResource):
                 "line_items": line_items,
                 "customer": customer,
                 "customer_details": customer_details,
+                "shipping_details": shipping_details,
+                "shipping_options": shipping_options,
                 "invoice": invoice,
                 "dual_pricing": dual_pricing,
                 "metadata": metadata,
                 "mode": mode,
                 "payment_method_types": payment_method_types,
                 "submit_label": submit_label,
+                "success_url": success_url,
             },
         )
 
     async def expire(self, id: str) -> "CheckoutSession":
         return await self._request(
             "POST",
-            "/v1/checkout/sessions/{id}/expire",
+            "/v1/checkout_sessions/{id}/expire",
             cast_to=CheckoutSession,
             path_params={"id": id},
         )
-
-
-class AsyncCheckoutResource(AsyncResource):
-    sessions: AsyncCheckoutSessionsResource
-
-    def __init__(self, client):
-        super().__init__(client)
-        self.sessions = AsyncCheckoutSessionsResource(client)
 
 
 class AsyncCreditNotesResource(AsyncResource):
@@ -2695,7 +2877,7 @@ class AsyncInvoicesResource(AsyncResource):
         billing_address: t.Optional[t.Dict[str, t.Any]] = None,
         shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_date: t.Optional[int] = None,
+        due_at: t.Optional[int] = None,
         days_until_due: t.Optional[int] = None,
         metadata: t.Optional["MetadataInput"] = None,
         attachments: t.Optional[t.List[str]] = None,
@@ -2714,7 +2896,7 @@ class AsyncInvoicesResource(AsyncResource):
                 "billing_address": billing_address,
                 "shipping_details": shipping_details,
                 "line_items": line_items,
-                "due_date": due_date,
+                "due_at": due_at,
                 "days_until_due": days_until_due,
                 "metadata": metadata,
                 "attachments": attachments,
@@ -2773,7 +2955,7 @@ class AsyncInvoicesResource(AsyncResource):
         billing_address: t.Optional[t.Dict[str, t.Any]] = None,
         shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_date: t.Optional[int] = None,
+        due_at: t.Optional[int] = None,
         days_until_due: t.Optional[int] = None,
         metadata: t.Optional["MetadataInput"] = None,
         attachments: t.Optional[t.List[str]] = None,
@@ -2793,7 +2975,7 @@ class AsyncInvoicesResource(AsyncResource):
                 "billing_address": billing_address,
                 "shipping_details": shipping_details,
                 "line_items": line_items,
-                "due_date": due_date,
+                "due_at": due_at,
                 "days_until_due": days_until_due,
                 "metadata": metadata,
                 "attachments": attachments,
@@ -3246,9 +3428,91 @@ class AsyncRequestsResource(AsyncResource):
         )
 
 
+class AsyncShippingRatesResource(AsyncResource):
+    async def create(
+        self,
+        *,
+        expand: t.Optional["ShippingRateExpand"] = None,
+        display_name: t.Optional[str] = None,
+        amount: t.Optional[int] = None,
+        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
+        metadata: t.Optional["MetadataInput"] = None,
+    ) -> "ShippingRate":
+        return await self._request(
+            "POST",
+            "/v1/shipping_rates",
+            cast_to=ShippingRate,
+            query={"expand": expand},
+            body={
+                "display_name": display_name,
+                "amount": amount,
+                "delivery_estimate": delivery_estimate,
+                "metadata": metadata,
+            },
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional["ShippingRateExpand"] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[float] = None,
+        filters: t.Optional[t.Union["ShippingRateFilters", t.Dict[str, t.Any]]] = None,
+    ) -> AsyncPaginator["ShippingRate"]:
+        return self._request_page(
+            "GET",
+            "/v1/shipping_rates",
+            item_type=ShippingRate,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    async def get(
+        self, id: str, *, expand: t.Optional["ShippingRateExpand"] = None
+    ) -> "ShippingRate":
+        return await self._request(
+            "GET",
+            "/v1/shipping_rates/{id}",
+            cast_to=ShippingRate,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    async def update(
+        self,
+        id: str,
+        *,
+        expand: t.Optional["ShippingRateExpand"] = None,
+        active: t.Optional[bool] = None,
+        display_name: t.Optional[str] = None,
+        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
+        metadata: t.Optional["MetadataInput"] = None,
+    ) -> "ShippingRate":
+        return await self._request(
+            "PATCH",
+            "/v1/shipping_rates/{id}",
+            cast_to=ShippingRate,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={
+                "active": active,
+                "display_name": display_name,
+                "delivery_estimate": delivery_estimate,
+                "metadata": metadata,
+            },
+        )
+
+
 # --- Client resource mixins ---
 class _SyncResources:
     checkout: CheckoutResource
+    checkout_sessions: CheckoutSessionsResource
     credit_notes: CreditNotesResource
     customers: CustomersResource
     discounts: DiscountsResource
@@ -3262,10 +3526,12 @@ class _SyncResources:
     products: ProductsResource
     refunds: RefundsResource
     requests: RequestsResource
+    shipping_rates: ShippingRatesResource
 
 
 class _AsyncResources:
     checkout: AsyncCheckoutResource
+    checkout_sessions: AsyncCheckoutSessionsResource
     credit_notes: AsyncCreditNotesResource
     customers: AsyncCustomersResource
     discounts: AsyncDiscountsResource
@@ -3279,10 +3545,14 @@ class _AsyncResources:
     products: AsyncProductsResource
     refunds: AsyncRefundsResource
     requests: AsyncRequestsResource
+    shipping_rates: AsyncShippingRatesResource
 
 
 def build_resources(client, is_async: bool = False) -> None:
     client.checkout = (AsyncCheckoutResource if is_async else CheckoutResource)(client)
+    client.checkout_sessions = (
+        AsyncCheckoutSessionsResource if is_async else CheckoutSessionsResource
+    )(client)
     client.credit_notes = (AsyncCreditNotesResource if is_async else CreditNotesResource)(client)
     client.customers = (AsyncCustomersResource if is_async else CustomersResource)(client)
     client.discounts = (AsyncDiscountsResource if is_async else DiscountsResource)(client)
@@ -3298,10 +3568,14 @@ def build_resources(client, is_async: bool = False) -> None:
     client.products = (AsyncProductsResource if is_async else ProductsResource)(client)
     client.refunds = (AsyncRefundsResource if is_async else RefundsResource)(client)
     client.requests = (AsyncRequestsResource if is_async else RequestsResource)(client)
+    client.shipping_rates = (AsyncShippingRatesResource if is_async else ShippingRatesResource)(
+        client
+    )
 
 
 # Resolve forward references across models.
 List.model_rebuild()
+AddressAutocompleteSuggestion.model_rebuild()
 InvalidRequestError.model_rebuild()
 RateLimitError.model_rebuild()
 ServerError.model_rebuild()
@@ -3320,6 +3594,8 @@ CheckoutSession.model_rebuild()
 Customer.model_rebuild()
 ExternalSync.model_rebuild()
 Metadata.model_rebuild()
+ShippingRate.model_rebuild()
+Address.model_rebuild()
 Payment.model_rebuild()
 PaymentMethod.model_rebuild()
 Card.model_rebuild()
@@ -3327,7 +3603,6 @@ UsBankAccount.model_rebuild()
 Dispute.model_rebuild()
 File.model_rebuild()
 Invoice.model_rebuild()
-Address.model_rebuild()
 LineItem.model_rebuild()
 Price.model_rebuild()
 Product.model_rebuild()
@@ -3372,12 +3647,16 @@ PriceFilters.model_rebuild()
 ProductFilters.model_rebuild()
 RefundExpand.model_rebuild()
 RefundFilters.model_rebuild()
+ShippingRateExpand.model_rebuild()
+ShippingRateFilters.model_rebuild()
 RequestFilters.model_rebuild()
 Stats.model_rebuild()
 
 __all__ = [
     "Error",
     "List",
+    "CountryCode",
+    "AddressAutocompleteSuggestion",
     "InvalidRequestError",
     "RateLimitError",
     "ServerError",
@@ -3397,10 +3676,12 @@ __all__ = [
     "Customer",
     "ExternalSync",
     "Metadata",
+    "ShippingRate",
+    "DeliveryEstimateUnit",
+    "Address",
     "Payment",
     "PaymentDeclineCode",
     "PaymentMethod",
-    "CountryCode",
     "Card",
     "UsBankAccount",
     "PaymentStatus",
@@ -3410,7 +3691,6 @@ __all__ = [
     "File",
     "FilePurpose",
     "Invoice",
-    "Address",
     "LineItem",
     "LineItemType",
     "Price",
@@ -3468,6 +3748,8 @@ __all__ = [
     "ProductFilters",
     "RefundExpand",
     "RefundFilters",
+    "ShippingRateExpand",
+    "ShippingRateFilters",
     "StatisticQuery",
     "StatisticAggregationType",
     "StatisticTimeInterval",
