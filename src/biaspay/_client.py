@@ -8,11 +8,13 @@ wires up the generated resource tree. The two share request-building via
 from __future__ import annotations
 
 import os
+import time
 from typing import (
     TYPE_CHECKING,
     Any,
     AsyncIterator,
     Iterator,
+    List,
     Mapping,
     Optional,
     Type,
@@ -23,6 +25,14 @@ import httpx
 from pydantic import BaseModel, TypeAdapter
 
 from ._exceptions import BiasError
+from ._stream import (
+    IDLE_TIMEOUT_SECONDS,
+    StreamProgress,
+    is_retryable,
+    reconnect_delay,
+    server_time_ms,
+    stream_timeout,
+)
 
 if TYPE_CHECKING:
     # Typed resource attributes (client.customers, ...) come from these mixins.
@@ -147,6 +157,7 @@ class Bias(_BaseClient, _SyncResources):
                     prepared.url,
                     headers=prepared.headers,
                     content=prepared.content,
+                    data=prepared.data,
                     files=prepared.files,
                 )
             except httpx.HTTPError as exc:
@@ -156,7 +167,7 @@ class Bias(_BaseClient, _SyncResources):
                     continue
                 raise wrap_transport_error(exc) from exc
 
-            if should_retry(response.status_code) and attempt < self._config.max_retries:
+            if should_retry(response) and attempt < self._config.max_retries:
                 _sleep(backoff_seconds(attempt, response.headers.get("retry-after")))
                 attempt += 1
                 continue
@@ -173,30 +184,72 @@ class Bias(_BaseClient, _SyncResources):
     ) -> Iterator[Any]:
         """Open a newline-delimited JSON stream and yield each decoded record.
 
-        The connection stays open for the lifetime of the generator; streams are
-        not retried (re-issuing would restart the live feed from scratch).
+        If the connection drops, it reconnects with backoff and lists the records
+        created while it was down, skipping any already yielded.
         """
-        prepared = build_request(
-            self._config,
-            method,
-            path,
-            path_params=path_params,
-            query=query,
-            extra_headers=extra_headers,
-        )
-        try:
-            with self._http.stream(
-                prepared.method, prepared.url, headers=prepared.headers
-            ) as response:
-                if response.status_code >= 300 or response.status_code < 200:
-                    response.read()
-                    raise_for_stream_status(response)
-                for line in response.iter_lines():
-                    record = parse_stream_line(line)
-                    if record is not None:
-                        yield record
-        except httpx.HTTPError as exc:
-            raise wrap_transport_error(exc) from exc
+        query = query or {}
+        progress: Optional[StreamProgress] = None
+        failures = 0
+        while True:
+            opened_at = time.monotonic()
+            healthy = False
+            try:
+                prepared = build_request(
+                    self._config,
+                    method,
+                    path,
+                    path_params=path_params,
+                    query=query,
+                    extra_headers=extra_headers,
+                )
+                with self._http.stream(
+                    prepared.method,
+                    prepared.url,
+                    headers=prepared.headers,
+                    timeout=stream_timeout(self._config.timeout),
+                ) as response:
+                    if response.status_code >= 300 or response.status_code < 200:
+                        response.read()
+                        raise_for_stream_status(response)
+                    missed: List[Any] = []
+                    if progress is None:
+                        progress = StreamProgress(query, server_time_ms(response))
+                    else:
+                        cursor: Optional[str] = None
+                        while True:
+                            page = self.request(
+                                method,
+                                path,
+                                path_params=path_params,
+                                query=progress.catch_up_query(cursor),
+                                extra_headers=extra_headers,
+                            )
+                            cursor = progress.take_page(page, missed)
+                            if cursor is None:
+                                break
+                    for record in reversed(missed):
+                        if progress.accept(record):
+                            healthy = True
+                            yield record
+                            if progress.done:
+                                return
+                    for line in response.iter_lines():
+                        record = parse_stream_line(line)
+                        if record is not None and progress.accept(record):
+                            healthy = True
+                            yield record
+                            if progress.done:
+                                return
+            except (httpx.HTTPError, BiasError) as exc:
+                error = wrap_transport_error(exc) if isinstance(exc, httpx.HTTPError) else exc
+                if progress is None or not is_retryable(error):
+                    if error is exc:
+                        raise
+                    raise error from exc
+            if healthy or time.monotonic() - opened_at >= IDLE_TIMEOUT_SECONDS:
+                failures = 0
+            _sleep(reconnect_delay(failures))
+            failures += 1
 
     def close(self) -> None:
         if self._owns_http:
@@ -271,6 +324,7 @@ class AsyncBias(_BaseClient, _AsyncResources):
                     prepared.url,
                     headers=prepared.headers,
                     content=prepared.content,
+                    data=prepared.data,
                     files=prepared.files,
                 )
             except httpx.HTTPError as exc:
@@ -280,7 +334,7 @@ class AsyncBias(_BaseClient, _AsyncResources):
                     continue
                 raise wrap_transport_error(exc) from exc
 
-            if should_retry(response.status_code) and attempt < self._config.max_retries:
+            if should_retry(response) and attempt < self._config.max_retries:
                 await _asleep(backoff_seconds(attempt, response.headers.get("retry-after")))
                 attempt += 1
                 continue
@@ -297,30 +351,72 @@ class AsyncBias(_BaseClient, _AsyncResources):
     ) -> AsyncIterator[Any]:
         """Open a newline-delimited JSON stream and yield each decoded record.
 
-        The connection stays open for the lifetime of the generator; streams are
-        not retried (re-issuing would restart the live feed from scratch).
+        If the connection drops, it reconnects with backoff and lists the records
+        created while it was down, skipping any already yielded.
         """
-        prepared = build_request(
-            self._config,
-            method,
-            path,
-            path_params=path_params,
-            query=query,
-            extra_headers=extra_headers,
-        )
-        try:
-            async with self._http.stream(
-                prepared.method, prepared.url, headers=prepared.headers
-            ) as response:
-                if response.status_code >= 300 or response.status_code < 200:
-                    await response.aread()
-                    raise_for_stream_status(response)
-                async for line in response.aiter_lines():
-                    record = parse_stream_line(line)
-                    if record is not None:
-                        yield record
-        except httpx.HTTPError as exc:
-            raise wrap_transport_error(exc) from exc
+        query = query or {}
+        progress: Optional[StreamProgress] = None
+        failures = 0
+        while True:
+            opened_at = time.monotonic()
+            healthy = False
+            try:
+                prepared = build_request(
+                    self._config,
+                    method,
+                    path,
+                    path_params=path_params,
+                    query=query,
+                    extra_headers=extra_headers,
+                )
+                async with self._http.stream(
+                    prepared.method,
+                    prepared.url,
+                    headers=prepared.headers,
+                    timeout=stream_timeout(self._config.timeout),
+                ) as response:
+                    if response.status_code >= 300 or response.status_code < 200:
+                        await response.aread()
+                        raise_for_stream_status(response)
+                    missed: List[Any] = []
+                    if progress is None:
+                        progress = StreamProgress(query, server_time_ms(response))
+                    else:
+                        cursor: Optional[str] = None
+                        while True:
+                            page = await self.request(
+                                method,
+                                path,
+                                path_params=path_params,
+                                query=progress.catch_up_query(cursor),
+                                extra_headers=extra_headers,
+                            )
+                            cursor = progress.take_page(page, missed)
+                            if cursor is None:
+                                break
+                    for record in reversed(missed):
+                        if progress.accept(record):
+                            healthy = True
+                            yield record
+                            if progress.done:
+                                return
+                    async for line in response.aiter_lines():
+                        record = parse_stream_line(line)
+                        if record is not None and progress.accept(record):
+                            healthy = True
+                            yield record
+                            if progress.done:
+                                return
+            except (httpx.HTTPError, BiasError) as exc:
+                error = wrap_transport_error(exc) if isinstance(exc, httpx.HTTPError) else exc
+                if progress is None or not is_retryable(error):
+                    if error is exc:
+                        raise
+                    raise error from exc
+            if healthy or time.monotonic() - opened_at >= IDLE_TIMEOUT_SECONDS:
+                failures = 0
+            await _asleep(reconnect_delay(failures))
+            failures += 1
 
     async def aclose(self) -> None:
         if self._owns_http:
@@ -345,8 +441,6 @@ def _attach_resources(client: Any, is_async: bool = False) -> None:
 
 
 def _sleep(seconds: float) -> None:
-    import time
-
     if seconds > 0:
         time.sleep(seconds)
 

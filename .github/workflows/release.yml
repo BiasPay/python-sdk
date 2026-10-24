@@ -1,23 +1,23 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+    push:
+        tags: ["v*"]
 
 permissions:
-  contents: read
-  id-token: write
+    contents: read
+    id-token: write
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    environment: pypi
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: test "v$(uv version --short)" = "$GITHUB_REF_NAME"
-      - run: uv sync --all-extras --frozen
-      - run: uv run ruff check .
-      - run: uv run pytest
-      - run: uv build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+    publish:
+        runs-on: ubuntu-latest
+        environment: pypi
+        steps:
+            - uses: actions/checkout@v7
+            - uses: astral-sh/setup-uv@v10
+            - run: test "v$(uv version --short)" = "$GITHUB_REF_NAME"
+            - run: uv sync --all-extras --frozen
+            - run: uv run ruff check .
+            - run: uv run pytest
+            - run: uv build
+            - uses: pypa/gh-action-pypi-publish@release/v1

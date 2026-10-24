@@ -1,6 +1,6 @@
 [project]
 name = "biaspay"
-version = "1.0.1"
+version = "2.0.0"
 description = "Python client for the Bias API"
 readme = "README.md"
 requires-python = ">=3.9"

@@ -48,7 +48,9 @@ class APIError(BiasError):
     """Base class for errors returned by the API with a structured body.
 
     Attributes mirror the ``error`` object in the response body plus a few
-    transport-level details (HTTP status, request id).
+    transport-level details (HTTP status, request id). ``message`` is for
+    developers; ``customer_message`` is safe to show a customer as is, or
+    ``None`` when the API wrote none.
     """
 
     def __init__(
@@ -59,6 +61,7 @@ class APIError(BiasError):
         type: Optional[str] = None,
         code: Optional[str] = None,
         param: Optional[str] = None,
+        customer_message: Optional[str] = None,
         request_id: Optional[str] = None,
         live: Optional[bool] = None,
         body: Optional[Mapping[str, Any]] = None,
@@ -69,6 +72,7 @@ class APIError(BiasError):
         self.type = type
         self.code = code
         self.param = param
+        self.customer_message = customer_message
         self.request_id = request_id
         self.live = live
         self.body = body
@@ -138,6 +142,7 @@ def exception_from_response(
         type=error_type,
         code=code,
         param=error.get("param"),
+        customer_message=error.get("customer_message"),
         request_id=request_id,
         live=error.get("live"),
         body=body if isinstance(body, Mapping) else None,

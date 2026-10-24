@@ -178,7 +178,7 @@ async def test_async_stream_skips_heartbeats():
 
     ids = []
     async with make_client() as client:
-        async for event in client.events.stream():
+        async for event in client.events.stream(limit=2):
             ids.append(event.id)
     assert ids == ["evt_1", "evt_2"]
 

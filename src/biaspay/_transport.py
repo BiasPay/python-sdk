@@ -22,6 +22,7 @@ from ._exceptions import (
     APITimeoutError,
     exception_from_response,
 )
+from ._types import _EXPLICIT_NULL, NOT_GIVEN
 
 API_VERSION = "2025-07-01"
 DEFAULT_BASE_URL = "https://api.biaspay.com"
@@ -49,6 +50,7 @@ class PreparedRequest:
     url: str
     headers: dict[str, str]
     content: Optional[bytes] = None
+    data: Optional[dict[str, str]] = None
     files: Optional[dict[str, Any]] = None
 
 
@@ -77,33 +79,80 @@ def _interpolate_path(path: str, path_params: Mapping[str, Any]) -> str:
     return out
 
 
-def _jsonable_body(value: Any) -> Any:
-    """Recursively convert a request body into JSON-serializable values.
+def _model_exclusions(value: BaseModel) -> dict[Any, Any]:
+    """Build Pydantic exclusions for omitted sentinels and legacy ``None`` values."""
+    exclusions: dict[Any, Any] = {}
+    for name, model_field in type(value).model_fields.items():
+        item = getattr(value, name)
+        if item is NOT_GIVEN or (item is None and model_field.default is not NOT_GIVEN):
+            exclusions[name] = True
+            continue
+        nested = _nested_model_exclusions(item)
+        if nested:
+            exclusions[name] = nested
+    return exclusions
 
-    Pydantic models (the generated request/param types) become plain dicts via
-    ``model_dump`` — ``by_alias`` so aliased reserved-word fields serialize to
-    their wire names, ``exclude_none`` to match the SDK's drop-``None`` behavior.
-    Dicts and lists are walked so models nested inside them are converted too.
-    This lets callers pass typed models directly (e.g. ``PaymentMethodCardCreate``)
-    instead of hand-building dicts.
-    """
+
+def _nested_model_exclusions(value: Any) -> Optional[dict[Any, Any]]:
     if isinstance(value, BaseModel):
-        return value.model_dump(by_alias=True, exclude_none=True)
+        return _model_exclusions(value)
     if isinstance(value, Mapping):
-        return {k: _jsonable_body(v) for k, v in value.items() if v is not None}
+        nested = {
+            key: child for key, item in value.items() if (child := _nested_model_exclusions(item))
+        }
+        return nested or None
     if isinstance(value, (list, tuple)):
-        return [_jsonable_body(v) for v in value]
+        nested = {
+            index: child
+            for index, item in enumerate(value)
+            if (child := _nested_model_exclusions(item))
+        }
+        return nested or None
+    return None
+
+
+def _jsonable_body(body: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert a request body into JSON-serializable values.
+
+    Generated nullable request-model fields default to ``NOT_GIVEN``. Fields set
+    explicitly to ``None`` are retained as JSON null, while omitted sentinel
+    fields and ordinary ``None`` method arguments are dropped. Nested dicts are
+    TypedDict params, where an omitted key means omitted, so a ``None`` value
+    there is JSON null.
+    """
+    return {k: _jsonable(v) for k, v in body.items() if v is not None and v is not NOT_GIVEN}
+
+
+def _jsonable(value: Any) -> Any:
+    if value is _EXPLICIT_NULL:
+        return None
+    if isinstance(value, BaseModel):
+        return value.model_dump(by_alias=True, exclude=_model_exclusions(value))
+    if isinstance(value, Mapping):
+        return {k: _jsonable(v) for k, v in value.items() if v is not NOT_GIVEN}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value if v is not NOT_GIVEN]
     return value
+
+
+def _is_file(value: Any) -> bool:
+    return isinstance(value, (bytes, bytearray, tuple)) or hasattr(value, "read")
+
+
+def _form_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def _encode_query(query: Mapping[str, Any]) -> Sequence[Tuple[str, str]]:
     """Drop ``None`` values; JSON-encode nested objects/arrays (matches the TS SDK)."""
     params: List[Tuple[str, str]] = []
     for key, value in query.items():
-        if value is None:
+        if value is None or value is NOT_GIVEN or value is _EXPLICIT_NULL:
             continue
-        if isinstance(value, (dict, list)):
-            params.append((key, json.dumps(value, separators=(",", ":"))))
+        if isinstance(value, (BaseModel, Mapping, list, tuple)):
+            params.append((key, json.dumps(_jsonable(value), separators=(",", ":"))))
         elif isinstance(value, bool):
             params.append((key, "true" if value else "false"))
         else:
@@ -145,20 +194,34 @@ def build_request(
         headers.update({k.lower(): v for k, v in extra_headers.items()})
 
     content: Optional[bytes] = None
+    data: Optional[dict[str, str]] = None
     files: Optional[dict[str, Any]] = None
     if body:
         if content_type == "multipart/form-data":
-            files = {k: v for k, v in body.items() if v is not None}  # httpx sets the boundary
+            # httpx sets the boundary. Only binary values become file parts; the
+            # rest are plain form fields.
+            fields = {
+                k: v
+                for k, v in body.items()
+                if v is not None and v is not NOT_GIVEN and v is not _EXPLICIT_NULL
+            }
+            files = {k: v for k, v in fields.items() if _is_file(v)}
+            data = {k: _form_value(v) for k, v in fields.items() if not _is_file(v)}
         else:
             headers["content-type"] = "application/json"
             clean = _jsonable_body(body)
             content = json.dumps(clean, separators=(",", ":")).encode("utf-8")
 
-    return PreparedRequest(method=method, url=url, headers=headers, content=content, files=files)
+    return PreparedRequest(
+        method=method, url=url, headers=headers, content=content, data=data, files=files
+    )
 
 
-def should_retry(status_code: int) -> bool:
-    return status_code == 429 or status_code >= 500
+def should_retry(response: httpx.Response) -> bool:
+    # A replayed response is the stored outcome for this idempotency key; retrying returns it again.
+    if response.headers.get("idempotency-replay") == "true":
+        return False
+    return response.status_code == 429 or response.status_code >= 500
 
 
 def backoff_seconds(attempt: int, retry_after: Optional[str]) -> float:

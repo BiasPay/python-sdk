@@ -43,6 +43,29 @@ def test_create_sends_auth_and_headers():
 
 
 @respx.mock
+def test_typed_dict_params_are_sent_as_given():
+    import json
+
+    from biaspay import MetadataInputParam, ShippingDetailsInputParam
+
+    route = respx.post(f"{BASE_URL}/v1/customers").mock(
+        return_value=httpx.Response(201, json=customer_obj())
+    )
+    shipping: ShippingDetailsInputParam = {"name": "Acme"}
+    metadata: MetadataInputParam = {"plan": "pro", "legacy": None}
+    make_client().customers.create(name="Acme", shipping_details=shipping, metadata=metadata)
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["metadata"] == {"plan": "pro", "legacy": None}
+
+
+def test_resource_attributes_are_snake_case():
+    client = make_client()
+    assert hasattr(client, "applied_discounts")
+    assert not hasattr(client, "appliedDiscounts")
+
+
+@respx.mock
 def test_get_interpolates_path():
     respx.get(f"{BASE_URL}/v1/customers/cus_42").mock(
         return_value=httpx.Response(200, json=customer_obj(id="cus_42"))
@@ -113,6 +136,20 @@ def test_server_error_retries_then_succeeds():
     customer = make_client(max_retries=1).customers.create(name="Acme")
     assert customer.id == "cus_1"
     assert route.call_count == 2
+
+
+@respx.mock
+def test_replayed_server_error_is_not_retried():
+    route = respx.post(f"{BASE_URL}/v1/customers").mock(
+        return_value=httpx.Response(
+            500,
+            headers={"idempotency-replay": "true"},
+            json={"object": "error", "error": {"type": "server_error"}},
+        )
+    )
+    with pytest.raises(ServerError):
+        make_client(max_retries=2).customers.create(name="Acme")
+    assert route.call_count == 1
 
 
 @respx.mock
@@ -217,10 +254,15 @@ def test_multipart_upload_sends_file_part():
     route = respx.post(f"{BASE_URL}/v1/files").mock(
         return_value=httpx.Response(201, json=file_obj())
     )
-    result = make_client().files.create(file="contents", purpose="invoice_attachment")
+    result = make_client().files.create(
+        file=("notes.txt", b"contents", "text/plain"), purpose="invoice_attachment"
+    )
     assert result.id == "file_1"
     req = route.calls.last.request
     assert req.headers["content-type"].startswith("multipart/form-data")
+    body = req.read()
+    assert b'name="file"; filename="notes.txt"' in body
+    assert b'name="purpose"\r\n\r\ninvoice_attachment' in body
     assert "idempotency-key" in req.headers
 
 
@@ -312,7 +354,7 @@ def test_stream_skips_heartbeats_and_reassembles():
     )
     respx.get(f"{BASE_URL}/v1/events").mock(return_value=httpx.Response(200, content=body))
 
-    ids = [e.id for e in make_client().events.stream()]
+    ids = [e.id for e in make_client().events.stream(limit=2)]
     assert ids == ["evt_1", "evt_2"]
 
 
@@ -321,11 +363,11 @@ def test_stream_sends_stream_true_and_filters():
     route = respx.get(f"{BASE_URL}/v1/events").mock(
         return_value=httpx.Response(200, content=_ndjson(event_obj("evt_1")))
     )
-    list(make_client().events.stream(limit=5, filters={"type": "customer.created"}))
+    list(make_client().events.stream(limit=1, filters={"type": "customer.created"}))
 
     params = route.calls.last.request.url.params
     assert params["stream"] == "true"
-    assert params["limit"] == "5"
+    assert params["limit"] == "1"
     assert params["filters"] == '{"type":"customer.created"}'
 
 

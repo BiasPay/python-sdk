@@ -14,6 +14,9 @@ def customer_obj(id="cus_1", name="Acme", email="acme@example.com"):
         "name": name,
         "email": email,
         "phone": None,
+        "shipping_details": None,
+        "default_payment_method": None,
+        "balance": 0,
         "external_sync": None,
         "metadata": {},
     }

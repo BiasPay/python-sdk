@@ -29,6 +29,14 @@ def test_payment_error_type():
     assert exc.param == "card"
 
 
+def test_customer_message_is_exposed_when_present():
+    exc = _raise(402, _err("payment_error", customer_message="Your card was declined."))
+    assert exc.message == "boom"
+    assert exc.customer_message == "Your card was declined."
+    assert _raise(500, _err("server_error", customer_message=None)).customer_message is None
+    assert _raise(500, _err("server_error")).customer_message is None
+
+
 def test_idempotency_error_type():
     exc = _raise(409, _err("idempotency_error"))
     assert isinstance(exc, IdempotencyError)

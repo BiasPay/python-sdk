@@ -1,6 +1,6 @@
 # Bias Python SDK
 
-The official Python client for the [Bias API](https://biaspay.com/docs/api-reference).
+The official Python client for the [Bias API](https://biaspay.com/docs/api).
 
 ## Installation
 

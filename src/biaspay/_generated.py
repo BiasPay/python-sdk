@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import typing as t
 
+import typing_extensions as te
 from pydantic import BaseModel, ConfigDict, Field
 
 from ._pagination import AsyncPaginator, SyncPage
 from ._resource import AsyncResource, SyncResource
+from ._types import NOT_GIVEN, FileInput, NotGiven, _as_nullable
 
 
 class _Model(BaseModel):
@@ -24,33 +26,12 @@ class List(_Model):
     items: t.List[t.Any]
 
 
-class AddressAutocompleteSuggestion(_Model):
-    label: str
-    secondary_label: str
-    full_address: str
-    components: t.Dict[str, t.Any]
-
-
-class InvalidRequestError(_Model):
-    object: t.Literal["error"]
-    error: t.Dict[str, t.Any]
-
-
-class RateLimitError(_Model):
-    object: t.Literal["error"]
-    error: t.Dict[str, t.Any]
-
-
-class ServerError(_Model):
-    object: t.Literal["error"]
-    error: t.Dict[str, t.Any]
-
-
 class CheckoutSessionExpand(_Model):
     payments: t.Optional[t.Union[bool, "PaymentExpand"]] = None
     customer: t.Optional[t.Union[bool, "CustomerExpand"]] = None
     invoice: t.Optional[t.Union[bool, "InvoiceExpand"]] = None
     line_items: t.Optional[t.Union[bool, "LineItemExpand"]] = None
+    discounts: t.Optional[t.Union[bool, "AppliedDiscountExpand"]] = None
     shipping_cost: t.Optional[t.Dict[str, t.Any]] = None
     shipping_options: t.Optional[t.Dict[str, t.Any]] = None
 
@@ -76,6 +57,7 @@ class InvoiceExpand(_Model):
     customer: t.Optional[t.Union[bool, "CustomerExpand"]] = None
     payments: t.Optional[t.Union[bool, "PaymentExpand"]] = None
     line_items: t.Optional[t.Union[bool, "LineItemExpand"]] = None
+    discounts: t.Optional[t.Union[bool, "AppliedDiscountExpand"]] = None
     attachments: t.Optional[t.Union[bool, "FileExpand"]] = None
     credit_notes: t.Optional[t.Union[bool, "CreditNoteExpand"]] = None
 
@@ -83,7 +65,7 @@ class InvoiceExpand(_Model):
 class LineItemExpand(_Model):
     product: t.Optional[t.Union[bool, "ProductExpand"]] = None
     price: t.Optional[t.Union[bool, "PriceExpand"]] = None
-    discounts: t.Optional[t.Union[bool, "DiscountExpand"]] = None
+    discounts: t.Optional[t.Union[bool, "AppliedDiscountExpand"]] = None
 
 
 class ProductExpand(_Model):
@@ -100,12 +82,18 @@ class PriceExpand(_Model):
     product: t.Optional[t.Union[bool, "ProductExpand"]] = None
 
 
+class AppliedDiscountExpand(_Model):
+    discount: t.Optional[t.Union[bool, "DiscountExpand"]] = None
+    customer: t.Optional[t.Union[bool, "CustomerExpand"]] = None
+
+
 class DiscountExpand(_Model):
     applies_to: t.Optional[t.Union[bool, "ProductExpand"]] = None
 
 
 class CreditNoteExpand(_Model):
     invoice: t.Optional[t.Union[bool, "InvoiceExpand"]] = None
+    customer: t.Optional[t.Union[bool, "CustomerExpand"]] = None
     line_items: t.Optional[bool] = None
 
 
@@ -114,26 +102,41 @@ class CheckoutSession(_Model):
     id: str
     live: bool
     created_at: int
-    amount: int
+    updated_at: int
+    total: int
+    subtotal: int
     amount_collected: int
+    amount_remaining: int
+    tax_total: int
+    allow_discount_codes: bool
     dual_pricing: t.Optional[t.Dict[str, t.Any]]
     client_details: t.Optional[t.Dict[str, t.Any]]
     client_secret: str
     customer: t.Optional[t.Union[str, "Customer"]]
     customer_details: t.Dict[str, t.Any]
     shipping_cost: t.Optional[t.Dict[str, t.Any]]
-    shipping_details: t.Optional[t.Dict[str, t.Any]]
+    shipping_details: t.Optional["ShippingDetails"]
+    shipping_address_collection: t.Optional["ShippingAddressCollection"]
+    billing_details_collection: t.Optional["BillingDetailsCollection"]
+    phone_number_collection: bool
     billing_details: t.Optional[t.Dict[str, t.Any]]
     shipping_options: t.List[t.Dict[str, t.Any]]
     payments: t.Optional[t.List["Payment"]]
     invoice: t.Optional[t.Union[str, "Invoice"]]
+    subscription: t.Optional[str]
+    subscription_terms: t.Optional[str]
+    subscription_data: t.Optional[t.Dict[str, t.Any]]
+    mandate_text: t.Optional[str]
+    company_mandate_text: t.Optional[str]
     line_items: t.Optional[t.List["LineItem"]]
+    discounts: t.Optional[t.List["AppliedDiscount"]]
     metadata: "Metadata"
     mode: "SessionMode"
-    payment_method_types: t.List[t.Literal["card", "us_bank_account"]]
+    payment_method_types: t.List[t.Literal["card", "us_bank_account", "apple_pay"]]
     status: "SessionStatus"
     submit_label: "SessionSubmitLabel"
     success_url: t.Optional[str]
+    url: str
 
 
 class Customer(_Model):
@@ -146,8 +149,26 @@ class Customer(_Model):
     name: t.Optional[str]
     email: t.Optional[str]
     phone: t.Optional[str]
+    shipping_details: t.Optional["ShippingDetails"]
+    default_payment_method: t.Optional[str]
+    balance: int
     external_sync: t.Optional["ExternalSync"]
     metadata: "Metadata"
+
+
+class ShippingDetails(_Model):
+    name: t.Optional[str]
+    phone: t.Optional[str]
+    address: "Address"
+
+
+class Address(_Model):
+    line1: t.Optional[str]
+    line2: t.Optional[str]
+    city: t.Optional[str]
+    state: t.Optional[str]
+    postal_code: t.Optional[str]
+    country: t.Optional["CountryCode"]
 
 
 class ExternalSync(_Model):
@@ -173,13 +194,13 @@ class ShippingRate(_Model):
     metadata: "Metadata"
 
 
-class Address(_Model):
-    line1: t.Optional[str]
-    line2: t.Optional[str]
-    city: t.Optional[str]
-    state: t.Optional[str]
-    postal_code: t.Optional[str]
-    country: t.Optional["CountryCode"]
+class ShippingAddressCollection(_Model):
+    allowed_countries: t.List["CountryCode"]
+
+
+class BillingDetailsCollection(_Model):
+    name: bool
+    address: bool
 
 
 class Payment(_Model):
@@ -191,6 +212,7 @@ class Payment(_Model):
     amount_capturable: int
     amount_received: int
     amount_refunded: int
+    fees: t.Dict[str, t.Any]
     capture_method: t.Literal["automatic", "manual"]
     customer: t.Optional[t.Union[str, "Customer"]]
     description: t.Optional[str]
@@ -202,6 +224,10 @@ class Payment(_Model):
     dispute: t.Optional[t.Union[str, "Dispute"]]
     session: t.Optional[t.Union[str, "CheckoutSession"]]
     invoice: t.Optional[t.Union[str, "Invoice"]]
+    mandate: t.Optional[str]
+    off_session: t.Optional[bool]
+    recurring: t.Optional[bool]
+    ach_return: t.Optional[t.Dict[str, t.Any]]
 
 
 class PaymentMethod(_Model):
@@ -210,10 +236,12 @@ class PaymentMethod(_Model):
     live: bool
     created_at: int
     active: bool
+    allow_redisplay: "PaymentMethodAllowRedisplay"
     billing_details: t.Dict[str, t.Any]
+    apple_pay: t.Optional[t.Dict[str, t.Any]]
     card: t.Optional["Card"]
     us_bank_account: t.Optional["UsBankAccount"]
-    type: t.Literal["card", "us_bank_account"]
+    type: t.Literal["card", "us_bank_account", "apple_pay"]
     customer: t.Optional[t.Union[str, "Customer"]]
 
 
@@ -228,6 +256,7 @@ class Card(_Model):
     country: t.Optional[str]
     exp_month: int
     exp_year: int
+    fingerprint: t.Optional[str]
     funding: t.Literal["credit", "debit", "prepaid", "unknown"]
     issuer: t.Optional[str]
     last4: str
@@ -238,7 +267,9 @@ class UsBankAccount(_Model):
     id: str
     created_at: int
     account_type: t.Literal["checking", "savings"]
+    account_holder_type: t.Literal["individual", "company"]
     bank_name: t.Optional[str]
+    fingerprint: t.Optional[str]
     last4: str
     routing_number: str
 
@@ -249,6 +280,7 @@ class Dispute(_Model):
     id: str
     created_at: int
     status: "DisputeStatus"
+    loss_accepted: bool
     amount: int
     reason: "DisputeReason"
     payment: t.Optional[t.Union[str, "Payment"]]
@@ -260,7 +292,7 @@ class Dispute(_Model):
 
 class File(_Model):
     object: t.Literal["file"]
-    live: bool
+    live: t.Optional[bool]
     id: str
     created_at: int
     name: str
@@ -279,9 +311,16 @@ class Invoice(_Model):
     metadata: "Metadata"
     payments: t.Optional[t.List["Payment"]]
     line_items: t.Optional[t.List["LineItem"]]
+    discounts: t.Optional[t.List["AppliedDiscount"]]
     number: str
-    shipping_details: t.Dict[str, t.Any]
+    shipping_details: "ShippingDetails"
     status: "InvoiceStatus"
+    collection_method: "InvoiceCollectionMethod"
+    subscription: t.Optional[str]
+    billing_reason: "InvoiceBillingReason"
+    default_payment_method: t.Optional[str]
+    attempt_count: int
+    next_attempt_at: t.Optional[int]
     due_at: t.Optional[int]
     days_until_due: t.Optional[int]
     default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]]
@@ -289,14 +328,16 @@ class Invoice(_Model):
     tax_total: int
     total: int
     amount_billed: int
+    balance_applied: int
     amount_paid: int
+    amount_remaining: int
     external_sync: t.Optional["ExternalSync"]
     attachments: t.Optional[t.List["File"]]
     credit_notes: t.Optional[t.List["CreditNote"]]
     memo: t.Optional[str]
     footer: t.Optional[str]
     custom_fields: t.Optional[t.Dict[str, t.Any]]
-    payment_link: t.Optional[str]
+    payment_url: t.Optional[str]
 
 
 class LineItem(_Model):
@@ -311,10 +352,14 @@ class LineItem(_Model):
     description: t.Optional[str]
     unit_amount: t.Optional[int]
     price: t.Optional[t.Union[str, "Price"]]
-    discounts: t.Optional[t.List["Discount"]]
+    product: t.Optional[t.Union[str, "Product"]]
+    discounts: t.Optional[t.List["AppliedDiscount"]]
     taxes: t.List[t.Dict[str, t.Any]]
+    tax_amounts: t.List["TaxAmount"]
     subtotal: int
     total: int
+    period: t.Optional[t.Dict[str, t.Any]]
+    subscription_item: t.Optional[str]
 
 
 class Price(_Model):
@@ -326,9 +371,10 @@ class Price(_Model):
     deleted: bool
     product: t.Union[str, "Product"]
     active: bool
-    description: t.Optional[str]
+    name: t.Optional[str]
     amount: int
-    type: t.Literal["one_time"]
+    type: t.Literal["one_time", "recurring"]
+    recurring: t.Optional["PriceRecurring"]
     metadata: "Metadata"
 
 
@@ -341,11 +387,37 @@ class Product(_Model):
     deleted: bool
     name: str
     description: t.Optional[str]
+    sku: t.Optional[str]
+    attributes: "ProductAttributes"
     active: bool
+    source: t.Optional[t.Dict[str, t.Any]]
     default_price: t.Optional[t.Union[str, "Price"]]
     prices: t.Optional[t.List["Price"]]
     images: t.Optional[t.List["File"]]
     metadata: "Metadata"
+
+
+class ProductAttributes(_Model):
+    pass
+
+
+class PriceRecurring(_Model):
+    interval: "RecurringInterval"
+    interval_count: int
+
+
+class AppliedDiscount(_Model):
+    object: t.Literal["applied_discount"]
+    live: bool
+    id: str
+    created_at: int
+    discount: t.Optional[t.Union[str, "Discount"]]
+    code: t.Optional[str]
+    target: t.Literal["line_items", "shipping"]
+    customer: t.Optional[t.Union[str, "Customer"]]
+    name: str
+    amount_off: t.Optional[int]
+    percent_off: t.Optional[float]
 
 
 class Discount(_Model):
@@ -356,11 +428,25 @@ class Discount(_Model):
     updated_at: int
     deleted: bool
     name: str
+    code: t.Optional[str]
+    active: bool
     amount_off: t.Optional[int]
     percent_off: t.Optional[float]
-    promotion_code: t.Optional[str]
+    expires_at: t.Optional[int]
+    max_redemptions: t.Optional[int]
+    times_redeemed: int
+    minimum_amount: t.Optional[int]
+    first_purchase_only: bool
+    once_per_customer: bool
     applies_to: t.Optional[t.List["Product"]]
     metadata: "Metadata"
+
+
+class TaxAmount(_Model):
+    amount: int
+    taxable_amount: int
+    display_name: str
+    percentage: t.Optional[float]
 
 
 class CreditNote(_Model):
@@ -370,11 +456,18 @@ class CreditNote(_Model):
     created_at: int
     updated_at: int
     invoice: t.Union[str, "Invoice"]
+    customer: t.Union[str, "Customer"]
     status: "CreditNoteStatus"
+    reason: "CreditNoteReason"
     line_items: t.Optional[t.List["CreditNoteLineItem"]]
     subtotal: int
     tax_total: int
     total: int
+    pre_payment_amount: int
+    refund_amount: int
+    credit_amount: int
+    out_of_band_amount: int
+    refunds: t.List["CreditNoteRefund"]
     memo: t.Optional[str]
     metadata: "Metadata"
 
@@ -387,14 +480,39 @@ class CreditNoteLineItem(_Model):
     unit_amount: int
     quantity: float
     taxes: t.List[t.Dict[str, t.Any]]
+    tax_amounts: t.List["TaxAmount"]
+    line_item: t.Optional[str]
+    period: t.Optional[t.Dict[str, t.Any]]
     subtotal: int
     total: int
 
 
+class CreditNoteRefund(_Model):
+    refund: str
+    amount: int
+
+
+class InvalidRequestError(_Model):
+    object: t.Literal["error"]
+    error: t.Dict[str, t.Any]
+
+
+class RateLimitError(_Model):
+    object: t.Literal["error"]
+    error: t.Dict[str, t.Any]
+
+
+class ServerError(_Model):
+    object: t.Literal["error"]
+    error: t.Dict[str, t.Any]
+
+
 class CheckoutSessionFilters(_Model):
-    amount: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    subtotal: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    status: t.Optional[t.Union["SessionStatus", t.Dict[str, t.Any]]] = None
+    mode: t.Optional[t.Union["SessionMode", t.Dict[str, t.Any]]] = None
 
 
 class NumberFilter(_Model):
@@ -404,6 +522,27 @@ class NumberFilter(_Model):
     lt: t.Optional[float] = None
     lte: t.Optional[float] = None
     exists: t.Optional[bool] = None
+
+
+class TimestampFilter(_Model):
+    eq: t.Optional[int] = None
+    gt: t.Optional[int] = None
+    gte: t.Optional[int] = None
+    lt: t.Optional[int] = None
+    lte: t.Optional[int] = None
+    exists: t.Optional[bool] = None
+
+
+class LineItemPriceData(_Model):
+    product: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    name: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    description: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    unit_amount: int
+
+
+class DiscountInput(_Model):
+    discount: t.Optional[str] = None
+    code: t.Optional[str] = None
 
 
 class MetadataInput(_Model):
@@ -416,17 +555,72 @@ class IdempotencyError(_Model):
 
 
 class CreditNoteFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    updated_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    updated_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     invoice: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     status: t.Optional[t.Union["CreditNoteStatus", t.Dict[str, t.Any]]] = None
 
 
+class CustomerBalanceTransactionExpand(_Model):
+    customer: t.Optional[t.Union[bool, "CustomerExpand"]] = None
+    invoice: t.Optional[t.Union[bool, "InvoiceExpand"]] = None
+    credit_note: t.Optional[t.Union[bool, "CreditNoteExpand"]] = None
+    refund: t.Optional[t.Union[bool, "RefundExpand"]] = None
+
+
+class RefundExpand(_Model):
+    payment: t.Optional[t.Union[bool, "PaymentExpand"]] = None
+
+
+class CustomerBalanceTransaction(_Model):
+    object: t.Literal["customer_balance_transaction"]
+    live: bool
+    id: str
+    created_at: int
+    customer: t.Union[str, "Customer"]
+    type: "CustomerBalanceTransactionType"
+    amount: int
+    ending_balance: int
+    invoice: t.Optional[t.Union[str, "Invoice"]]
+    credit_note: t.Optional[t.Union[str, "CreditNote"]]
+    refund: t.Optional[t.Union[str, "Refund"]]
+    description: t.Optional[str]
+    metadata: "Metadata"
+
+
+class Refund(_Model):
+    object: t.Literal["refund"]
+    id: str
+    live: bool
+    created_at: int
+    amount: int
+    fees: t.Dict[str, t.Any]
+    failed_reason: t.Optional[str]
+    payment: t.Union[str, "Payment"]
+    status: "RefundStatus"
+
+
+class CustomerBalanceTransactionFilters(_Model):
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    type: t.Optional[t.Union["CustomerBalanceTransactionType", t.Dict[str, t.Any]]] = None
+    invoice: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    credit_note: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+
+
+class ShippingDetailsInput(_Model):
+    name: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    phone: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    address: t.Optional[t.Dict[str, t.Any]] = NOT_GIVEN  # type: ignore[assignment]
+
+
 class CustomerFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     email: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
     name: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
     phone: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    balance: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
 
 
 class StringFilter(_Model):
@@ -438,15 +632,24 @@ class StringFilter(_Model):
     exists: t.Optional[bool] = None
 
 
-class DiscountFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+class AppliedDiscountFilters(_Model):
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     name: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
-    promotion_code: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    discount: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    code: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+
+
+class DiscountFilters(_Model):
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    name: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    code: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    active: t.Optional["BooleanFilter"] = None
     applies_to: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
 
 
 class DisputeFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     amount: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     payment: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     status: t.Optional[t.Union["DisputeStatus", t.Dict[str, t.Any]]] = None
@@ -458,15 +661,11 @@ class EventExpand(_Model):
 
 class RequestExpand(_Model):
     api_key: t.Optional[t.Union[bool, "ApiKeyExpand"]] = None
-    dashboard_user: t.Optional[t.Union[bool, t.Any]] = None
+    dashboard_user: t.Optional[bool] = None
 
 
 class ApiKeyExpand(_Model):
     pass
-
-
-class OrganizationExpand(_Model):
-    merchants: t.Optional[t.Union[bool, t.Any]] = None
 
 
 class Event(_Model):
@@ -479,7 +678,9 @@ class Event(_Model):
             "CheckoutSession",
             "CreditNote",
             "Customer",
+            "CustomerBalanceTransaction",
             "Discount",
+            "AppliedDiscount",
             "Dispute",
             "File",
             "Invoice",
@@ -489,6 +690,8 @@ class Event(_Model):
             "Product",
             "Refund",
             "ShippingRate",
+            "Subscription",
+            "Mandate",
         ]
     ]
     state: t.Optional[
@@ -496,7 +699,9 @@ class Event(_Model):
             "CheckoutSession",
             "CreditNote",
             "Customer",
+            "CustomerBalanceTransaction",
             "Discount",
+            "AppliedDiscount",
             "Dispute",
             "File",
             "Invoice",
@@ -506,6 +711,8 @@ class Event(_Model):
             "Product",
             "Refund",
             "ShippingRate",
+            "Subscription",
+            "Mandate",
         ]
     ]
     request: t.Optional[t.Union[str, "Request"]]
@@ -513,21 +720,84 @@ class Event(_Model):
     context: t.Optional["EventContext"]
 
 
-class Refund(_Model):
-    object: t.Literal["refund"]
-    id: str
+class Subscription(_Model):
+    object: t.Literal["subscription"]
     live: bool
+    id: str
     created_at: int
+    updated_at: int
+    customer: t.Union[str, "Customer"]
+    status: "SubscriptionStatus"
+    items: t.List["SubscriptionItem"]
+    default_payment_method: t.Optional[str]
+    collection_method: "InvoiceCollectionMethod"
+    days_until_due: t.Optional[int]
+    default_taxes: t.List[t.Dict[str, t.Any]]
+    billing_cycle_anchor_at: int
+    next_renewal_at: t.Optional[int]
+    trial_start_at: t.Optional[int]
+    trial_end_at: t.Optional[int]
+    cancel_at: t.Optional[int]
+    cancel_at_period_end: bool
+    canceled_at: t.Optional[int]
+    ended_at: t.Optional[int]
+    cancellation_details: "SubscriptionCancellationDetails"
+    incomplete_expires_at: t.Optional[int]
+    payment_retries_end_at: t.Optional[int]
+    resumes_at: t.Optional[int]
+    latest_invoice: t.Optional[t.Union[str, "Invoice"]]
+    shipping_details: t.Optional["ShippingDetails"]
+    shipping_cost: t.Optional["SubscriptionShippingCost"]
+    pending_change: t.Optional["SubscriptionPendingChange"]
+    metadata: "Metadata"
+
+
+class SubscriptionItem(_Model):
+    object: t.Literal["subscription_item"]
+    id: str
+    created_at: int
+    subscription: str
+    price: "Price"
+    quantity: int
+    current_period: t.Dict[str, t.Any]
+    metadata: "Metadata"
+
+
+class SubscriptionCancellationDetails(_Model):
+    reason: t.Optional["SubscriptionCancellationReason"]
+    feedback: t.Optional["SubscriptionCancellationFeedback"]
+    comment: t.Optional[str]
+
+
+class SubscriptionShippingCost(_Model):
+    shipping_rate: t.Optional[str]
+    display_name: t.Optional[str]
     amount: int
-    failed_reason: t.Optional[str]
-    payment: t.Union[str, "Payment"]
-    status: "RefundStatus"
+
+
+class SubscriptionPendingChange(_Model):
+    items: t.List[t.Dict[str, t.Any]]
+    effective_at: t.Optional[int]
+
+
+class Mandate(_Model):
+    object: t.Literal["mandate"]
+    live: bool
+    id: str
+    created_at: int
+    payment_method: str
+    customer: t.Optional[str]
+    status: "MandateStatus"
+    type: t.Literal["multi_use", "single_use"]
+    customer_acceptance: t.Dict[str, t.Any]
+    authorization_text: str
+    replaced_by: t.Optional[str]
 
 
 class Request(_Model):
     object: t.Literal["request"]
     id: str
-    live: bool
+    live: t.Optional[bool]
     created_at: int
     method: t.Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
     url: str
@@ -535,7 +805,7 @@ class Request(_Model):
     request: t.Dict[str, t.Any]
     response: t.Dict[str, t.Any]
     api_key: t.Optional[t.Union[str, "ApiKey"]]
-    dashboard_user: t.Optional[t.Union[str, t.Any]]
+    dashboard_user: t.Optional[str]
 
 
 class ApiKey(_Model):
@@ -547,38 +817,32 @@ class ApiKey(_Model):
     description: str
 
 
-class Organization(_Model):
-    object: t.Literal["organization"]
-    id: str
-    created_at: int
-    deleted: bool
-    name: str
-    active: bool
-
-
 class EventFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     for_: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = Field(default=None, alias="for")
     object: t.Optional[t.Union["EventObjectType", t.Dict[str, t.Any]]] = None
     type: t.Optional[t.Union["EventType", t.Dict[str, t.Any]]] = None
 
 
 class FileFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     size: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     purpose: t.Optional[t.Union["FilePurpose", t.Dict[str, t.Any]]] = None
 
 
 class InvoiceFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    updated_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    due_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    updated_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    due_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    number: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
     customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     status: t.Optional[t.Union["InvoiceStatus", t.Dict[str, t.Any]]] = None
+    subscription: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    billing_reason: t.Optional[t.Union["InvoiceBillingReason", t.Dict[str, t.Any]]] = None
 
 
 class PaymentMethodFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     active: t.Optional["BooleanFilter"] = None
 
@@ -586,66 +850,60 @@ class PaymentMethodFilters(_Model):
 class PaymentMethodCardCreate(_Model):
     billing_details: t.Optional["PaymentMethodCreateBillingDetails"] = None
     card: "CardDetails"
-    setup_future_usage: t.Optional["SetupFutureUsage"] = None
+    setup_future_usage: t.Optional["SetupFutureUsage"] = NOT_GIVEN  # type: ignore[assignment]
+    allow_redisplay: t.Optional["PaymentMethodAllowRedisplay"] = None
 
 
 class PaymentMethodCreateBillingDetails(_Model):
-    name: t.Optional[str] = None
-    email: t.Optional[str] = None
-    phone: t.Optional[str] = None
+    name: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    email: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
     address: t.Optional["PaymentMethodCreateBillingAddress"] = None
 
 
 class PaymentMethodCreateBillingAddress(_Model):
-    line1: t.Optional[str] = None
-    line2: t.Optional[str] = None
-    city: t.Optional[str] = None
-    state: t.Optional[str] = None
-    postal_code: t.Optional[str] = None
-    country: t.Optional["CountryCode"] = None
+    line1: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    line2: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    city: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    state: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    postal_code: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+    country: t.Optional["CountryCode"] = NOT_GIVEN  # type: ignore[assignment]
 
 
 class CardDetails(_Model):
     number: str
-    exp_month: float
-    exp_year: float
+    exp_month: int
+    exp_year: int
     cvc: str
-
-
-class PaymentMethodCardEncrypted(_Model):
-    billing_details: t.Optional["PaymentMethodCreateBillingDetails"] = None
-    card: "EncryptedCardDetails"
-    setup_future_usage: t.Optional["SetupFutureUsage"] = None
-
-
-class EncryptedCardDetails(_Model):
-    encrypted_number: str
-    encrypted_expiry: str
-    encrypted_cvc: str
 
 
 class PaymentMethodUsBankAccountCreate(_Model):
     billing_details: t.Optional["PaymentMethodCreateBillingDetails"] = None
     us_bank_account: "UsBankAccountDetails"
-    setup_future_usage: t.Optional["SetupFutureUsage"] = None
+    setup_future_usage: t.Optional["SetupFutureUsage"] = NOT_GIVEN  # type: ignore[assignment]
+    allow_redisplay: t.Optional["PaymentMethodAllowRedisplay"] = None
 
 
 class UsBankAccountDetails(_Model):
     account_number: str
     routing_number: str
     account_type: t.Literal["checking", "savings"]
+    account_holder_type: t.Optional[t.Literal["individual", "company"]] = None
 
 
-class PaymentMethodUsBankAccountEncrypted(_Model):
+class PaymentMethodApplePayCreate(_Model):
     billing_details: t.Optional["PaymentMethodCreateBillingDetails"] = None
-    us_bank_account: "EncryptedUsBankAccountDetails"
-    setup_future_usage: t.Optional["SetupFutureUsage"] = None
+    apple_pay: "ApplePayDetails"
 
 
-class EncryptedUsBankAccountDetails(_Model):
-    encrypted_account_number: str
-    encrypted_routing_number: str
-    account_type: t.Literal["checking", "savings"]
+class ApplePayDetails(_Model):
+    payment_data: "ApplePayPaymentData"
+
+
+class ApplePayPaymentData(_Model):
+    version: t.Literal["EC_v1"]
+    data: str
+    signature: str
+    header: t.Dict[str, t.Any]
 
 
 class PaymentError(_Model):
@@ -657,7 +915,7 @@ class PaymentFilters(_Model):
     amount: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     amount_received: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     amount_refunded: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     disputed: t.Optional[t.Union[bool, t.Dict[str, t.Any]]] = None
     invoice: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
@@ -665,31 +923,40 @@ class PaymentFilters(_Model):
     status: t.Optional[t.Union["PaymentStatus", t.Dict[str, t.Any]]] = None
 
 
+class PriceRecurringInput(_Model):
+    interval: "RecurringInterval"
+    interval_count: t.Optional[int] = None
+
+
 class PriceFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     product: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     active: t.Optional["BooleanFilter"] = None
     amount: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    description: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    name: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
 
 
 class ProductFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    id: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     name: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
+    sku: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
     description: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
     active: t.Optional["BooleanFilter"] = None
 
 
-class RefundExpand(_Model):
-    payment: t.Optional[t.Union[bool, "PaymentExpand"]] = None
-
-
 class RefundFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     amount: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
     payment: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     payment_method: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
     status: t.Optional[t.Union["RefundStatus", t.Dict[str, t.Any]]] = None
+
+
+class MandateFilters(_Model):
+    payment_method: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    status: t.Optional[t.Union["MandateStatus", t.Dict[str, t.Any]]] = None
 
 
 class ShippingRateExpand(_Model):
@@ -697,32 +964,142 @@ class ShippingRateExpand(_Model):
 
 
 class ShippingRateFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
     active: t.Optional["BooleanFilter"] = None
     display_name: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
     amount: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
 
 
-class RequestFilters(_Model):
-    created_at: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
-    url: t.Optional[t.Union[str, "StringFilter", t.Dict[str, t.Any]]] = None
-    method: t.Optional[
-        t.Union[t.Literal["GET", "POST", "PUT", "PATCH", "DELETE"], t.Dict[str, t.Any]]
+class SubscriptionExpand(_Model):
+    customer: t.Optional[t.Union[bool, "CustomerExpand"]] = None
+    items: t.Optional[t.Dict[str, t.Any]] = None
+    latest_invoice: t.Optional[t.Union[bool, "InvoiceExpand"]] = None
+
+
+class SubscriptionItemCreate(_Model):
+    price: str
+    quantity: t.Optional[int] = None
+    metadata: t.Optional["MetadataInput"] = NOT_GIVEN  # type: ignore[assignment]
+
+
+class SubscriptionItemUpdate(_Model):
+    id: t.Optional[str] = None
+    price: t.Optional[str] = None
+    quantity: t.Optional[int] = None
+    deleted: t.Optional[bool] = None
+    metadata: t.Optional["MetadataInput"] = NOT_GIVEN  # type: ignore[assignment]
+
+
+class UpcomingInvoice(_Model):
+    object: t.Literal["upcoming_invoice"]
+    live: bool
+    customer: str
+    subscription: str
+    billing_reason: "InvoiceBillingReason"
+    collection_method: "InvoiceCollectionMethod"
+    default_payment_method: t.Optional[str]
+    days_until_due: t.Optional[int]
+    period: "UpcomingInvoicePeriod"
+    next_attempt_at: t.Optional[int]
+    shipping_details: t.Optional["ShippingDetails"]
+    default_taxes: t.List[t.Dict[str, t.Any]]
+    line_items: t.List["UpcomingInvoiceLineItem"]
+    subtotal: int
+    tax_total: int
+    total: int
+    balance_applied: int
+    amount_billed: int
+    proration: t.Optional["UpcomingInvoiceProration"]
+
+
+class UpcomingInvoicePeriod(_Model):
+    start: int
+    end: int
+
+
+class UpcomingInvoiceLineItem(_Model):
+    type: "LineItemType"
+    quantity: float
+    name: t.Optional[str]
+    description: t.Optional[str]
+    unit_amount: int
+    price: t.Optional[str]
+    product: t.Optional[str]
+    taxes: t.List[t.Dict[str, t.Any]]
+    tax_amounts: t.List["TaxAmount"]
+    subtotal: int
+    total: int
+    period: "UpcomingInvoicePeriod"
+    subscription_item: t.Optional[str]
+
+
+class UpcomingInvoiceProration(_Model):
+    proration_at: int
+    credit_lines: t.List[t.Dict[str, t.Any]]
+    charge_lines: t.List[t.Dict[str, t.Any]]
+    credit_total: int
+    charge_total: int
+    balance_applied: int
+    amount_billed: int
+
+
+class SubscriptionFilters(_Model):
+    created_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    customer: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
+    status: t.Optional[t.Union["SubscriptionStatus", t.Dict[str, t.Any]]] = None
+    next_renewal_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    trial_end_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    canceled_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    ended_at: t.Optional[t.Union[int, "TimestampFilter", t.Dict[str, t.Any]]] = None
+    cancellation_reason: t.Optional[
+        t.Union["SubscriptionCancellationReason", t.Dict[str, t.Any]]
     ] = None
-    api_key: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
-    dashboard_user: t.Optional[t.Union[str, t.Dict[str, t.Any]]] = None
-    status: t.Optional[t.Union[float, "NumberFilter", t.Dict[str, t.Any]]] = None
+    cancellation_feedback: t.Optional[
+        t.Union["SubscriptionCancellationFeedback", t.Dict[str, t.Any]]
+    ] = None
 
 
-class Stats(_Model):
-    object: t.Literal["stats"]
-    stats: t.List[t.List[t.Dict[str, t.Any]]]
+class SubscriptionCancellationDetailsInput(_Model):
+    feedback: t.Optional["SubscriptionCancellationFeedback"] = NOT_GIVEN  # type: ignore[assignment]
+    comment: t.Optional[str] = NOT_GIVEN  # type: ignore[assignment]
+
+
+class BillingPortalSessionFlowInput(_Model):
+    type: t.Literal["change_plan"]
+    subscription: str
+    price: t.Optional[str] = None
+    quantity: t.Optional[int] = None
+    proration_behavior: t.Optional["SubscriptionProrationBehavior"] = None
+    apply_at: t.Optional["SubscriptionChangeApplyAt"] = None
+
+
+class BillingPortalSession(_Model):
+    object: t.Literal["billing_portal_session"]
+    live: bool
+    id: str
+    created_at: int
+    customer: str
+    subscription: t.Optional[str]
+    return_url: t.Optional[str]
+    flow: t.Optional["BillingPortalSessionFlow"]
+    url: str
+    expires_at: int
+
+
+class BillingPortalSessionFlow(_Model):
+    type: t.Literal["change_plan"]
+    subscription: str
+    price: t.Optional[str]
+    quantity: t.Optional[int]
+    proration_behavior: t.Optional["SubscriptionProrationBehavior"]
+    apply_at: t.Optional["SubscriptionChangeApplyAt"]
 
 
 # --- Aliases ---
 Error = t.Union[
     "ServerError", "PaymentError", "InvalidRequestError", "IdempotencyError", "RateLimitError"
 ]
+SessionDeviceType = t.Literal["mobile", "desktop"]
 CountryCode = t.Literal[
     "AC",
     "AD",
@@ -977,7 +1354,6 @@ CountryCode = t.Literal[
     "ZM",
     "ZW",
 ]
-SessionDeviceType = t.Literal["mobile", "desktop"]
 DeliveryEstimateUnit = t.Literal["business_day", "day", "month", "week"]
 PaymentDeclineCode = t.Literal[
     "authentication_required",
@@ -1019,6 +1395,7 @@ PaymentDeclineCode = t.Literal[
     "try_again_later",
     "withdrawal_count_limit_exceeded",
 ]
+PaymentMethodAllowRedisplay = t.Literal["always", "limited"]
 PaymentStatus = t.Literal["requires_capture", "processing", "canceled", "succeeded", "failed"]
 DisputeStatus = t.Literal["needs_response", "under_review", "won", "lost"]
 DisputeReason = t.Literal[
@@ -1034,15 +1411,57 @@ DisputeReason = t.Literal[
     "late_presentment",
     "paid_by_other_means",
     "general",
+    "insufficient_funds",
 ]
 FilePurpose = t.Literal["dispute_evidence", "invoice_attachment", "product_image"]
 LineItemType = t.Literal["custom", "catalog"]
+RecurringInterval = t.Literal["day", "week", "month", "year"]
 InvoiceStatus = t.Literal["draft", "open", "paid", "uncollectible", "void"]
+InvoiceCollectionMethod = t.Literal["charge_automatically", "send_invoice"]
+InvoiceBillingReason = t.Literal[
+    "manual", "subscription_create", "subscription_cycle", "subscription_update"
+]
 CreditNoteStatus = t.Literal["issued", "void"]
-SessionMode = t.Literal["payment", "setup"]
+CreditNoteReason = t.Literal[
+    "proration", "duplicate", "order_change", "product_unsatisfactory", "other"
+]
+SessionMode = t.Literal["payment", "setup", "subscription"]
 SessionStatus = t.Literal["open", "expired", "complete"]
 SessionSubmitLabel = t.Literal["auto", "book", "donate", "pay", "subscribe"]
+ShippingAddressCollectionInput = t.Union[bool, t.Dict[str, t.Any]]
+BillingDetailsCollectionInput = t.Union[bool, t.Dict[str, t.Any]]
+IdempotencyErrorCode = t.Literal[
+    "idempotency_key_in_use", "idempotency_params_mismatch", "idempotency_outcome_unknown"
+]
+CreditNoteLineItemCreate = t.Dict[str, t.Any]
+CustomerBalanceTransactionType = t.Literal[
+    "adjustment",
+    "credit_note",
+    "credit_note_void",
+    "invoice_applied",
+    "invoice_reversed",
+    "refund_failed",
+    "credit_refunded",
+]
 RefundStatus = t.Literal["failed", "pending", "succeeded"]
+BooleanFilter = t.Union[bool, t.Dict[str, t.Any]]
+SubscriptionStatus = t.Literal[
+    "incomplete", "trialing", "active", "past_due", "paused", "unpaid", "canceled"
+]
+SubscriptionCancellationReason = t.Literal[
+    "cancellation_requested", "payment_failed", "incomplete_expired"
+]
+SubscriptionCancellationFeedback = t.Literal[
+    "too_expensive",
+    "unused",
+    "switched_service",
+    "missing_features",
+    "low_quality",
+    "customer_service",
+    "too_complex",
+    "other",
+]
+MandateStatus = t.Literal["active", "revoked", "replaced"]
 EventType = t.Literal[
     "customer.created",
     "customer.updated",
@@ -1057,6 +1476,7 @@ EventType = t.Literal[
     "payment_method.updated",
     "payment_method.deactivated",
     "refund.created",
+    "refund.updated",
     "refund.succeeded",
     "refund.failed",
     "file.created",
@@ -1075,6 +1495,8 @@ EventType = t.Literal[
     "discount.created",
     "discount.updated",
     "discount.deleted",
+    "applied_discount.created",
+    "applied_discount.deleted",
     "invoice.created",
     "invoice.updated",
     "invoice.deleted",
@@ -1088,8 +1510,21 @@ EventType = t.Literal[
     "credit_note.created",
     "credit_note.updated",
     "credit_note.voided",
+    "customer_balance_transaction.created",
+    "customer_balance_transaction.updated",
     "shipping_rate.created",
     "shipping_rate.updated",
+    "subscription.created",
+    "subscription.updated",
+    "subscription.trial_will_end",
+    "subscription.will_renew",
+    "subscription.past_due",
+    "subscription.paused",
+    "subscription.resumed",
+    "subscription.canceled",
+    "mandate.created",
+    "mandate.updated",
+    "mandate.revoked",
 ]
 EventContext = t.Dict[str, t.Any]
 EventObjectType = t.Literal[
@@ -1103,59 +1538,481 @@ EventObjectType = t.Literal[
     "product",
     "price",
     "discount",
+    "applied_discount",
     "invoice",
     "credit_note",
+    "customer_balance_transaction",
     "shipping_rate",
+    "subscription",
+    "mandate",
 ]
-BooleanFilter = t.Union[bool, t.Dict[str, t.Any]]
 PaymentMethodCreate = t.Union[
-    "PaymentMethodCardCreate",
-    "PaymentMethodCardEncrypted",
-    "PaymentMethodUsBankAccountCreate",
-    "PaymentMethodUsBankAccountEncrypted",
+    "PaymentMethodCardCreate", "PaymentMethodUsBankAccountCreate", "PaymentMethodApplePayCreate"
 ]
 SetupFutureUsage = t.Literal["off_session", "on_session"]
-StatisticQuery = t.Dict[str, t.Any]
-StatisticAggregationType = t.Literal[
-    "sum", "average", "count", "min", "max", "median", "percentile_95", "percentile_99"
+MandateCustomerAcceptanceInput = t.Dict[str, t.Any]
+SubscriptionPaymentBehavior = t.Literal["allow_incomplete", "error_if_incomplete"]
+SubscriptionChangeApplyAt = t.Literal["now", "period_end"]
+SubscriptionProrationBehavior = t.Literal["always_invoice", "none"]
+
+
+# --- Request params ---
+class CheckoutSessionExpandParam(te.TypedDict):
+    payments: te.NotRequired[t.Optional[t.Union[bool, "PaymentExpandParam"]]]
+    customer: te.NotRequired[t.Optional[t.Union[bool, "CustomerExpandParam"]]]
+    invoice: te.NotRequired[t.Optional[t.Union[bool, "InvoiceExpandParam"]]]
+    line_items: te.NotRequired[t.Optional[t.Union[bool, "LineItemExpandParam"]]]
+    discounts: te.NotRequired[t.Optional[t.Union[bool, "AppliedDiscountExpandParam"]]]
+    shipping_cost: te.NotRequired[t.Optional[t.Dict[str, t.Any]]]
+    shipping_options: te.NotRequired[t.Optional[t.Dict[str, t.Any]]]
+
+
+class PaymentExpandParam(te.TypedDict):
+    customer: te.NotRequired[t.Optional[t.Union[bool, "CustomerExpandParam"]]]
+    dispute: te.NotRequired[t.Optional[t.Union[bool, "DisputeExpandParam"]]]
+    invoice: te.NotRequired[t.Optional[t.Union[bool, "InvoiceExpandParam"]]]
+    payment_method: te.NotRequired[t.Optional[t.Union[bool, t.Dict[str, t.Any]]]]
+    session: te.NotRequired[t.Optional[t.Union[bool, "CheckoutSessionExpandParam"]]]
+
+
+class CustomerExpandParam(te.TypedDict):
+    pass
+
+
+class DisputeExpandParam(te.TypedDict):
+    evidence: te.NotRequired[t.Optional[bool]]
+    payment: te.NotRequired[t.Optional[t.Union[bool, "PaymentExpandParam"]]]
+
+
+class InvoiceExpandParam(te.TypedDict):
+    customer: te.NotRequired[t.Optional[t.Union[bool, "CustomerExpandParam"]]]
+    payments: te.NotRequired[t.Optional[t.Union[bool, "PaymentExpandParam"]]]
+    line_items: te.NotRequired[t.Optional[t.Union[bool, "LineItemExpandParam"]]]
+    discounts: te.NotRequired[t.Optional[t.Union[bool, "AppliedDiscountExpandParam"]]]
+    attachments: te.NotRequired[t.Optional[t.Union[bool, "FileExpandParam"]]]
+    credit_notes: te.NotRequired[t.Optional[t.Union[bool, "CreditNoteExpandParam"]]]
+
+
+class LineItemExpandParam(te.TypedDict):
+    product: te.NotRequired[t.Optional[t.Union[bool, "ProductExpandParam"]]]
+    price: te.NotRequired[t.Optional[t.Union[bool, "PriceExpandParam"]]]
+    discounts: te.NotRequired[t.Optional[t.Union[bool, "AppliedDiscountExpandParam"]]]
+
+
+class ProductExpandParam(te.TypedDict):
+    images: te.NotRequired[t.Optional[t.Union[bool, "FileExpandParam"]]]
+    default_price: te.NotRequired[t.Optional[t.Union[bool, "PriceExpandParam"]]]
+    prices: te.NotRequired[t.Optional[t.Union[bool, "PriceExpandParam"]]]
+
+
+class FileExpandParam(te.TypedDict):
+    pass
+
+
+class PriceExpandParam(te.TypedDict):
+    product: te.NotRequired[t.Optional[t.Union[bool, "ProductExpandParam"]]]
+
+
+class AppliedDiscountExpandParam(te.TypedDict):
+    discount: te.NotRequired[t.Optional[t.Union[bool, "DiscountExpandParam"]]]
+    customer: te.NotRequired[t.Optional[t.Union[bool, "CustomerExpandParam"]]]
+
+
+class DiscountExpandParam(te.TypedDict):
+    applies_to: te.NotRequired[t.Optional[t.Union[bool, "ProductExpandParam"]]]
+
+
+class CreditNoteExpandParam(te.TypedDict):
+    invoice: te.NotRequired[t.Optional[t.Union[bool, "InvoiceExpandParam"]]]
+    customer: te.NotRequired[t.Optional[t.Union[bool, "CustomerExpandParam"]]]
+    line_items: te.NotRequired[t.Optional[bool]]
+
+
+ProductAttributesParam = t.Dict[str, str]
+
+
+class CheckoutSessionFiltersParam(te.TypedDict):
+    subtotal: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["SessionStatus", t.Dict[str, t.Any]]]
+    mode: te.NotRequired[t.Union["SessionMode", t.Dict[str, t.Any]]]
+
+
+class NumberFilterParam(te.TypedDict):
+    eq: te.NotRequired[float]
+    gt: te.NotRequired[float]
+    gte: te.NotRequired[float]
+    lt: te.NotRequired[float]
+    lte: te.NotRequired[float]
+    exists: te.NotRequired[bool]
+
+
+class TimestampFilterParam(te.TypedDict):
+    eq: te.NotRequired[int]
+    gt: te.NotRequired[int]
+    gte: te.NotRequired[int]
+    lt: te.NotRequired[int]
+    lte: te.NotRequired[int]
+    exists: te.NotRequired[bool]
+
+
+class LineItemPriceDataParam(te.TypedDict):
+    product: te.NotRequired[t.Optional[str]]
+    name: te.NotRequired[t.Optional[str]]
+    description: te.NotRequired[t.Optional[str]]
+    unit_amount: int
+
+
+class DiscountInputParam(te.TypedDict):
+    discount: te.NotRequired[str]
+    code: te.NotRequired[str]
+
+
+MetadataInputParam = t.Dict[str, t.Optional[t.Union[str, float, bool]]]
+
+
+class CreditNoteFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    updated_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    invoice: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["CreditNoteStatus", t.Dict[str, t.Any]]]
+
+
+class CustomerBalanceTransactionExpandParam(te.TypedDict):
+    customer: te.NotRequired[t.Optional[t.Union[bool, "CustomerExpandParam"]]]
+    invoice: te.NotRequired[t.Optional[t.Union[bool, "InvoiceExpandParam"]]]
+    credit_note: te.NotRequired[t.Optional[t.Union[bool, "CreditNoteExpandParam"]]]
+    refund: te.NotRequired[t.Optional[t.Union[bool, "RefundExpandParam"]]]
+
+
+class RefundExpandParam(te.TypedDict):
+    payment: te.NotRequired[t.Optional[t.Union[bool, "PaymentExpandParam"]]]
+
+
+class CustomerBalanceTransactionFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    type: te.NotRequired[t.Union["CustomerBalanceTransactionType", t.Dict[str, t.Any]]]
+    invoice: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    credit_note: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+
+
+class ShippingDetailsInputParam(te.TypedDict):
+    name: te.NotRequired[t.Optional[str]]
+    phone: te.NotRequired[t.Optional[str]]
+    address: te.NotRequired[t.Optional[t.Dict[str, t.Any]]]
+
+
+class CustomerFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    email: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    name: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    phone: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    balance: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+
+
+class StringFilterParam(te.TypedDict):
+    eq: te.NotRequired[str]
+    contains: te.NotRequired[str]
+    starts_with: te.NotRequired[str]
+    ends_with: te.NotRequired[str]
+    case_sensitive: te.NotRequired[bool]
+    exists: te.NotRequired[bool]
+
+
+class AppliedDiscountFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    name: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    discount: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    code: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+
+
+class DiscountFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    name: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    code: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    active: te.NotRequired["BooleanFilter"]
+    applies_to: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+
+
+class DisputeFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    amount: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    payment: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["DisputeStatus", t.Dict[str, t.Any]]]
+
+
+class EventExpandParam(te.TypedDict):
+    request: te.NotRequired[t.Optional[t.Union[bool, "RequestExpandParam"]]]
+
+
+class RequestExpandParam(te.TypedDict):
+    api_key: te.NotRequired[t.Optional[t.Union[bool, "ApiKeyExpandParam"]]]
+    dashboard_user: te.NotRequired[t.Optional[bool]]
+
+
+class ApiKeyExpandParam(te.TypedDict):
+    pass
+
+
+EventFiltersParam = te.TypedDict(
+    "EventFiltersParam",
+    {
+        "created_at": te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]],
+        "for": te.NotRequired[t.Union[str, t.Dict[str, t.Any]]],
+        "object": te.NotRequired[t.Union["EventObjectType", t.Dict[str, t.Any]]],
+        "type": te.NotRequired[t.Union["EventType", t.Dict[str, t.Any]]],
+    },
+)
+
+
+class FileFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    size: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    purpose: te.NotRequired[t.Union["FilePurpose", t.Dict[str, t.Any]]]
+
+
+class InvoiceFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    updated_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    due_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    number: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["InvoiceStatus", t.Dict[str, t.Any]]]
+    subscription: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    billing_reason: te.NotRequired[t.Union["InvoiceBillingReason", t.Dict[str, t.Any]]]
+
+
+class PaymentMethodFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    active: te.NotRequired["BooleanFilter"]
+
+
+PaymentMethodCreateParam = t.Union[
+    "PaymentMethodCardCreateParam",
+    "PaymentMethodUsBankAccountCreateParam",
+    "PaymentMethodApplePayCreateParam",
 ]
-StatisticTimeInterval = t.Literal[
-    "1m", "5m", "10m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w", "1M", "1q", "1y"
-]
+
+
+class PaymentMethodCardCreateParam(te.TypedDict):
+    billing_details: te.NotRequired["PaymentMethodCreateBillingDetailsParam"]
+    card: "CardDetailsParam"
+    setup_future_usage: te.NotRequired[t.Optional["SetupFutureUsage"]]
+    allow_redisplay: te.NotRequired["PaymentMethodAllowRedisplay"]
+
+
+class PaymentMethodCreateBillingDetailsParam(te.TypedDict):
+    name: te.NotRequired[t.Optional[str]]
+    email: te.NotRequired[t.Optional[str]]
+    address: te.NotRequired["PaymentMethodCreateBillingAddressParam"]
+
+
+class PaymentMethodCreateBillingAddressParam(te.TypedDict):
+    line1: te.NotRequired[t.Optional[str]]
+    line2: te.NotRequired[t.Optional[str]]
+    city: te.NotRequired[t.Optional[str]]
+    state: te.NotRequired[t.Optional[str]]
+    postal_code: te.NotRequired[t.Optional[str]]
+    country: te.NotRequired[t.Optional["CountryCode"]]
+
+
+class CardDetailsParam(te.TypedDict):
+    number: str
+    exp_month: int
+    exp_year: int
+    cvc: str
+
+
+class PaymentMethodUsBankAccountCreateParam(te.TypedDict):
+    billing_details: te.NotRequired["PaymentMethodCreateBillingDetailsParam"]
+    us_bank_account: "UsBankAccountDetailsParam"
+    setup_future_usage: te.NotRequired[t.Optional["SetupFutureUsage"]]
+    allow_redisplay: te.NotRequired["PaymentMethodAllowRedisplay"]
+
+
+class UsBankAccountDetailsParam(te.TypedDict):
+    account_number: str
+    routing_number: str
+    account_type: t.Literal["checking", "savings"]
+    account_holder_type: te.NotRequired[t.Literal["individual", "company"]]
+
+
+class PaymentMethodApplePayCreateParam(te.TypedDict):
+    billing_details: te.NotRequired["PaymentMethodCreateBillingDetailsParam"]
+    apple_pay: "ApplePayDetailsParam"
+
+
+class ApplePayDetailsParam(te.TypedDict):
+    payment_data: "ApplePayPaymentDataParam"
+
+
+class ApplePayPaymentDataParam(te.TypedDict):
+    version: t.Literal["EC_v1"]
+    data: str
+    signature: str
+    header: t.Dict[str, t.Any]
+
+
+class PaymentFiltersParam(te.TypedDict):
+    amount: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    amount_received: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    amount_refunded: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    disputed: te.NotRequired[t.Union[bool, t.Dict[str, t.Any]]]
+    invoice: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    session: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["PaymentStatus", t.Dict[str, t.Any]]]
+
+
+class PriceRecurringInputParam(te.TypedDict):
+    interval: "RecurringInterval"
+    interval_count: te.NotRequired[int]
+
+
+class PriceFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    product: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    active: te.NotRequired["BooleanFilter"]
+    amount: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    name: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+
+
+class ProductFiltersParam(te.TypedDict):
+    id: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    name: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    sku: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    description: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    active: te.NotRequired["BooleanFilter"]
+
+
+class RefundFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    amount: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+    payment: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    payment_method: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["RefundStatus", t.Dict[str, t.Any]]]
+
+
+class MandateFiltersParam(te.TypedDict):
+    payment_method: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["MandateStatus", t.Dict[str, t.Any]]]
+
+
+class ShippingRateExpandParam(te.TypedDict):
+    pass
+
+
+class ShippingRateFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    active: te.NotRequired["BooleanFilter"]
+    display_name: te.NotRequired[t.Union[str, "StringFilterParam", t.Dict[str, t.Any]]]
+    amount: te.NotRequired[t.Union[float, "NumberFilterParam", t.Dict[str, t.Any]]]
+
+
+class SubscriptionExpandParam(te.TypedDict):
+    customer: te.NotRequired[t.Optional[t.Union[bool, "CustomerExpandParam"]]]
+    items: te.NotRequired[t.Optional[t.Dict[str, t.Any]]]
+    latest_invoice: te.NotRequired[t.Optional[t.Union[bool, "InvoiceExpandParam"]]]
+
+
+class SubscriptionItemCreateParam(te.TypedDict):
+    price: str
+    quantity: te.NotRequired[int]
+    metadata: te.NotRequired[t.Optional["MetadataInputParam"]]
+
+
+class SubscriptionItemUpdateParam(te.TypedDict):
+    id: te.NotRequired[str]
+    price: te.NotRequired[str]
+    quantity: te.NotRequired[int]
+    deleted: te.NotRequired[bool]
+    metadata: te.NotRequired[t.Optional["MetadataInputParam"]]
+
+
+class SubscriptionFiltersParam(te.TypedDict):
+    created_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    customer: te.NotRequired[t.Union[str, t.Dict[str, t.Any]]]
+    status: te.NotRequired[t.Union["SubscriptionStatus", t.Dict[str, t.Any]]]
+    next_renewal_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    trial_end_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    canceled_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    ended_at: te.NotRequired[t.Union[int, "TimestampFilterParam", t.Dict[str, t.Any]]]
+    cancellation_reason: te.NotRequired[
+        t.Union["SubscriptionCancellationReason", t.Dict[str, t.Any]]
+    ]
+    cancellation_feedback: te.NotRequired[
+        t.Union["SubscriptionCancellationFeedback", t.Dict[str, t.Any]]
+    ]
+
+
+class SubscriptionCancellationDetailsInputParam(te.TypedDict):
+    feedback: te.NotRequired[t.Optional["SubscriptionCancellationFeedback"]]
+    comment: te.NotRequired[t.Optional[str]]
+
+
+class BillingPortalSessionFlowInputParam(te.TypedDict):
+    type: t.Literal["change_plan"]
+    subscription: str
+    price: te.NotRequired[str]
+    quantity: te.NotRequired[int]
+    proration_behavior: te.NotRequired["SubscriptionProrationBehavior"]
+    apply_at: te.NotRequired["SubscriptionChangeApplyAt"]
 
 
 # --- Resources ---
-class CheckoutAddressResource(SyncResource):
-    def autocomplete(
-        self, *, input: t.Optional[str] = None, country: t.Optional["CountryCode"] = None
-    ) -> t.List["AddressAutocompleteSuggestion"]:
+class CheckoutSessionsDiscountCodeResource(SyncResource):
+    def apply(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+        code: t.Optional[str] = None,
+    ) -> "CheckoutSession":
         return self._request(
-            "GET",
-            "/v1/checkout/address/autocomplete",
-            cast_to=None,
-            query={"input": input, "country": country},
+            "POST",
+            "/v1/checkout_sessions/{id}/discount_code",
+            cast_to=CheckoutSession,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={"code": code},
         )
 
-
-class CheckoutResource(SyncResource):
-    address: CheckoutAddressResource
-
-    def __init__(self, client):
-        super().__init__(client)
-        self.address = CheckoutAddressResource(client)
+    def remove(
+        self,
+        id: str,
+        discount: str,
+        *,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+    ) -> "CheckoutSession":
+        return self._request(
+            "DELETE",
+            "/v1/checkout_sessions/{id}/discount_code/{discount}",
+            cast_to=CheckoutSession,
+            path_params={"id": id, "discount": discount},
+            query={"expand": expand},
+        )
 
 
 class CheckoutSessionsResource(SyncResource):
-    def public_key(self, id: str) -> t.Dict[str, t.Any]:
-        return self._request(
-            "GET",
-            "/v1/checkout_sessions/{id}/public_key",
-            cast_to=None,
-            path_params={"id": id},
-        )
+    discount_code: CheckoutSessionsDiscountCodeResource
+
+    def __init__(self, client):
+        super().__init__(client)
+        self.discount_code = CheckoutSessionsDiscountCodeResource(client)
 
     def get(
-        self, id: str, *, expand: t.Optional["CheckoutSessionExpand"] = None
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
     ) -> "CheckoutSession":
         return self._request(
             "GET",
@@ -1169,17 +2026,29 @@ class CheckoutSessionsResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["CheckoutSessionExpand"] = None,
-        amount: t.Optional[int] = None,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+        allow_discount_codes: t.Optional[bool] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        discounts: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
-        billing_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
-        shipping_rate: t.Optional[str] = None,
-        dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_address_collection: t.Union[
+            t.Optional["ShippingAddressCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        billing_details_collection: t.Union[
+            t.Optional["BillingDetailsCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        phone_number_collection: t.Optional[bool] = None,
+        billing_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_options: t.Union[
+            t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]], NotGiven
+        ] = NOT_GIVEN,
+        shipping_rate: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        dual_pricing: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "CheckoutSession":
         return self._request(
             "PATCH",
@@ -1188,27 +2057,35 @@ class CheckoutSessionsResource(SyncResource):
             path_params={"id": id},
             query={"expand": expand},
             body={
-                "amount": amount,
+                "allow_discount_codes": allow_discount_codes,
                 "line_items": line_items,
+                "discounts": discounts,
                 "customer": customer,
                 "customer_details": customer_details,
-                "shipping_details": shipping_details,
-                "billing_details": billing_details,
-                "shipping_options": shipping_options,
-                "shipping_rate": shipping_rate,
-                "dual_pricing": dual_pricing,
-                "metadata": metadata,
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_address_collection": _as_nullable(shipping_address_collection),
+                "billing_details_collection": _as_nullable(billing_details_collection),
+                "phone_number_collection": phone_number_collection,
+                "billing_details": _as_nullable(billing_details),
+                "shipping_options": _as_nullable(shipping_options),
+                "shipping_rate": _as_nullable(shipping_rate),
+                "dual_pricing": _as_nullable(dual_pricing),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["CheckoutSessionExpand"] = None,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["CheckoutSessionFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union["CheckoutSessionFilters", "CheckoutSessionFiltersParam"], t.Dict[str, t.Any]
+            ]
+        ] = None,
     ) -> SyncPage["CheckoutSession"]:
         return self._request_page(
             "GET",
@@ -1226,20 +2103,36 @@ class CheckoutSessionsResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["CheckoutSessionExpand"] = None,
-        amount: t.Optional[int] = None,
-        line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+        allow_discount_codes: t.Optional[bool] = None,
+        line_items: t.Union[t.Optional[t.List[t.Dict[str, t.Any]]], NotGiven] = NOT_GIVEN,
+        discounts: t.Optional[t.Sequence[t.Union["DiscountInput", "DiscountInputParam"]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_address_collection: t.Union[
+            t.Optional["ShippingAddressCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        billing_details_collection: t.Union[
+            t.Optional["BillingDetailsCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        phone_number_collection: t.Optional[bool] = None,
+        shipping_options: t.Union[
+            t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]], NotGiven
+        ] = NOT_GIVEN,
         invoice: t.Optional[str] = None,
-        dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        dual_pricing: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
         mode: t.Optional["SessionMode"] = None,
-        payment_method_types: t.Optional[t.List[t.Literal["card", "us_bank_account"]]] = None,
+        payment_method_types: t.Optional[
+            t.List[t.Literal["card", "us_bank_account", "apple_pay"]]
+        ] = None,
         submit_label: t.Optional["SessionSubmitLabel"] = None,
-        success_url: t.Optional[str] = None,
+        success_url: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        subscription_data: t.Optional[t.Dict[str, t.Any]] = None,
+        subscription: t.Optional[str] = None,
     ) -> "CheckoutSession":
         return self._request(
             "POST",
@@ -1247,19 +2140,25 @@ class CheckoutSessionsResource(SyncResource):
             cast_to=CheckoutSession,
             query={"expand": expand},
             body={
-                "amount": amount,
-                "line_items": line_items,
+                "allow_discount_codes": allow_discount_codes,
+                "line_items": _as_nullable(line_items),
+                "discounts": discounts,
                 "customer": customer,
                 "customer_details": customer_details,
-                "shipping_details": shipping_details,
-                "shipping_options": shipping_options,
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_address_collection": _as_nullable(shipping_address_collection),
+                "billing_details_collection": _as_nullable(billing_details_collection),
+                "phone_number_collection": phone_number_collection,
+                "shipping_options": _as_nullable(shipping_options),
                 "invoice": invoice,
-                "dual_pricing": dual_pricing,
-                "metadata": metadata,
+                "dual_pricing": _as_nullable(dual_pricing),
+                "metadata": _as_nullable(metadata),
                 "mode": mode,
                 "payment_method_types": payment_method_types,
                 "submit_label": submit_label,
-                "success_url": success_url,
+                "success_url": _as_nullable(success_url),
+                "subscription_data": subscription_data,
+                "subscription": subscription,
             },
         )
 
@@ -1276,12 +2175,18 @@ class CreditNotesResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["CreditNoteExpand"] = None,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
         invoice: t.Optional[str] = None,
-        line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        line_items: t.Optional[t.Sequence["CreditNoteLineItemCreate"]] = None,
+        reason: t.Optional["CreditNoteReason"] = None,
+        refund_amount: t.Optional[int] = None,
+        credit_amount: t.Optional[int] = None,
+        out_of_band_amount: t.Optional[int] = None,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        memo: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "CreditNote":
         return self._request(
             "POST",
@@ -1291,20 +2196,26 @@ class CreditNotesResource(SyncResource):
             body={
                 "invoice": invoice,
                 "line_items": line_items,
+                "reason": reason,
+                "refund_amount": refund_amount,
+                "credit_amount": credit_amount,
+                "out_of_band_amount": out_of_band_amount,
                 "default_taxes": default_taxes,
-                "memo": memo,
-                "metadata": metadata,
+                "memo": _as_nullable(memo),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["CreditNoteExpand"] = None,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["CreditNoteFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["CreditNoteFilters", "CreditNoteFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["CreditNote"]:
         return self._request_page(
             "GET",
@@ -1319,7 +2230,12 @@ class CreditNotesResource(SyncResource):
             },
         )
 
-    def get(self, id: str, *, expand: t.Optional["CreditNoteExpand"] = None) -> "CreditNote":
+    def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
+    ) -> "CreditNote":
         return self._request(
             "GET",
             "/v1/credit_notes/{id}",
@@ -1332,11 +2248,13 @@ class CreditNotesResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["CreditNoteExpand"] = None,
-        line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
+        line_items: t.Optional[t.Sequence["CreditNoteLineItemCreate"]] = None,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        memo: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "CreditNote":
         return self._request(
             "PATCH",
@@ -1347,8 +2265,8 @@ class CreditNotesResource(SyncResource):
             body={
                 "line_items": line_items,
                 "default_taxes": default_taxes,
-                "memo": memo,
-                "metadata": metadata,
+                "memo": _as_nullable(memo),
+                "metadata": _as_nullable(metadata),
             },
         )
 
@@ -1361,20 +2279,129 @@ class CreditNotesResource(SyncResource):
         )
 
 
+class CustomerBalanceTransactionsResource(SyncResource):
+    def create(
+        self,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+        customer: t.Optional[str] = None,
+        amount: t.Optional[int] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "CustomerBalanceTransaction":
+        return self._request(
+            "POST",
+            "/v1/customer_balance_transactions",
+            cast_to=CustomerBalanceTransaction,
+            query={"expand": expand},
+            body={
+                "customer": customer,
+                "amount": amount,
+                "description": _as_nullable(description),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union[
+                    "CustomerBalanceTransactionFilters", "CustomerBalanceTransactionFiltersParam"
+                ],
+                t.Dict[str, t.Any],
+            ]
+        ] = None,
+    ) -> SyncPage["CustomerBalanceTransaction"]:
+        return self._request_page(
+            "GET",
+            "/v1/customer_balance_transactions",
+            item_type=CustomerBalanceTransaction,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+    ) -> "CustomerBalanceTransaction":
+        return self._request(
+            "GET",
+            "/v1/customer_balance_transactions/{id}",
+            cast_to=CustomerBalanceTransaction,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    def update(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "CustomerBalanceTransaction":
+        return self._request(
+            "PATCH",
+            "/v1/customer_balance_transactions/{id}",
+            cast_to=CustomerBalanceTransaction,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={"description": _as_nullable(description), "metadata": _as_nullable(metadata)},
+        )
+
+
 class CustomersResource(SyncResource):
     def create(
         self,
         *,
-        name: t.Optional[str] = None,
-        email: t.Optional[str] = None,
-        phone: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        email: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        phone: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Customer":
         return self._request(
             "POST",
             "/v1/customers",
             cast_to=Customer,
-            body={"name": name, "email": email, "phone": phone, "metadata": metadata},
+            body={
+                "name": _as_nullable(name),
+                "email": _as_nullable(email),
+                "phone": _as_nullable(phone),
+                "shipping_details": _as_nullable(shipping_details),
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+            },
         )
 
     def list(
@@ -1382,8 +2409,10 @@ class CustomersResource(SyncResource):
         *,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["CustomerFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["CustomerFilters", "CustomerFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Customer"]:
         return self._request_page(
             "GET",
@@ -1417,17 +2446,72 @@ class CustomersResource(SyncResource):
         self,
         id: str,
         *,
-        name: t.Optional[str] = None,
-        email: t.Optional[str] = None,
-        phone: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        email: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        phone: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Customer":
         return self._request(
             "PATCH",
             "/v1/customers/{id}",
             cast_to=Customer,
             path_params={"id": id},
-            body={"name": name, "email": email, "phone": phone, "metadata": metadata},
+            body={
+                "name": _as_nullable(name),
+                "email": _as_nullable(email),
+                "phone": _as_nullable(phone),
+                "shipping_details": _as_nullable(shipping_details),
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+
+class AppliedDiscountsResource(SyncResource):
+    def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["AppliedDiscountExpand", "AppliedDiscountExpandParam"]] = None,
+    ) -> "AppliedDiscount":
+        return self._request(
+            "GET",
+            "/v1/applied_discounts/{id}",
+            cast_to=AppliedDiscount,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional[t.Union["AppliedDiscountExpand", "AppliedDiscountExpandParam"]] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union["AppliedDiscountFilters", "AppliedDiscountFiltersParam"], t.Dict[str, t.Any]
+            ]
+        ] = None,
+    ) -> SyncPage["AppliedDiscount"]:
+        return self._request_page(
+            "GET",
+            "/v1/applied_discounts",
+            item_type=AppliedDiscount,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
         )
 
 
@@ -1435,13 +2519,21 @@ class DiscountsResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["DiscountExpand"] = None,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
         name: t.Optional[str] = None,
-        amount_off: t.Optional[int] = None,
-        percent_off: t.Optional[float] = None,
-        promotion_code: t.Optional[str] = None,
-        applies_to: t.Optional[t.List[str]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        code: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        active: t.Optional[bool] = None,
+        amount_off: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        percent_off: t.Union[t.Optional[float], NotGiven] = NOT_GIVEN,
+        expires_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        max_redemptions: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        minimum_amount: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        first_purchase_only: t.Optional[bool] = None,
+        once_per_customer: t.Optional[bool] = None,
+        applies_to: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Discount":
         return self._request(
             "POST",
@@ -1450,22 +2542,30 @@ class DiscountsResource(SyncResource):
             query={"expand": expand},
             body={
                 "name": name,
-                "amount_off": amount_off,
-                "percent_off": percent_off,
-                "promotion_code": promotion_code,
-                "applies_to": applies_to,
-                "metadata": metadata,
+                "code": _as_nullable(code),
+                "active": active,
+                "amount_off": _as_nullable(amount_off),
+                "percent_off": _as_nullable(percent_off),
+                "expires_at": _as_nullable(expires_at),
+                "max_redemptions": _as_nullable(max_redemptions),
+                "minimum_amount": _as_nullable(minimum_amount),
+                "first_purchase_only": first_purchase_only,
+                "once_per_customer": once_per_customer,
+                "applies_to": _as_nullable(applies_to),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["DiscountExpand"] = None,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["DiscountFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["DiscountFilters", "DiscountFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Discount"]:
         return self._request_page(
             "GET",
@@ -1488,7 +2588,12 @@ class DiscountsResource(SyncResource):
             path_params={"id": id},
         )
 
-    def get(self, id: str, *, expand: t.Optional["DiscountExpand"] = None) -> "Discount":
+    def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
+    ) -> "Discount":
         return self._request(
             "GET",
             "/v1/discounts/{id}",
@@ -1501,10 +2606,12 @@ class DiscountsResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["DiscountExpand"] = None,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
         name: t.Optional[str] = None,
-        promotion_code: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        active: t.Optional[bool] = None,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Discount":
         return self._request(
             "PATCH",
@@ -1512,12 +2619,14 @@ class DiscountsResource(SyncResource):
             cast_to=Discount,
             path_params={"id": id},
             query={"expand": expand},
-            body={"name": name, "promotion_code": promotion_code, "metadata": metadata},
+            body={"name": name, "active": active, "metadata": _as_nullable(metadata)},
         )
 
 
 class DisputesResource(SyncResource):
-    def get(self, id: str, *, expand: t.Optional["DisputeExpand"] = None) -> "Dispute":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["DisputeExpand", "DisputeExpandParam"]] = None
+    ) -> "Dispute":
         return self._request(
             "GET",
             "/v1/disputes/{id}",
@@ -1530,10 +2639,13 @@ class DisputesResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["DisputeExpand"] = None,
+        expand: t.Optional[t.Union["DisputeExpand", "DisputeExpandParam"]] = None,
         evidence: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
         submit: t.Optional[bool] = None,
+        loss_accepted: t.Optional[bool] = None,
     ) -> "Dispute":
         return self._request(
             "PATCH",
@@ -1541,17 +2653,24 @@ class DisputesResource(SyncResource):
             cast_to=Dispute,
             path_params={"id": id},
             query={"expand": expand},
-            body={"evidence": evidence, "metadata": metadata, "submit": submit},
+            body={
+                "evidence": evidence,
+                "metadata": _as_nullable(metadata),
+                "submit": submit,
+                "loss_accepted": loss_accepted,
+            },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["DisputeExpand"] = None,
+        expand: t.Optional[t.Union["DisputeExpand", "DisputeExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["DisputeFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["DisputeFilters", "DisputeFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Dispute"]:
         return self._request_page(
             "GET",
@@ -1568,7 +2687,9 @@ class DisputesResource(SyncResource):
 
 
 class EventsResource(SyncResource):
-    def get(self, id: str, *, expand: t.Optional["EventExpand"] = None) -> "Event":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["EventExpand", "EventExpandParam"]] = None
+    ) -> "Event":
         return self._request(
             "GET",
             "/v1/events/{id}",
@@ -1580,12 +2701,14 @@ class EventsResource(SyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["EventExpand"] = None,
+        expand: t.Optional[t.Union["EventExpand", "EventExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
+        limit: t.Optional[int] = None,
         stream: t.Optional[bool] = None,
-        filters: t.Optional[t.Union["EventFilters", t.Dict[str, t.Any]]] = None,
+        filters: t.Optional[
+            t.Union[t.Union["EventFilters", "EventFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Event"]:
         return self._request_page(
             "GET",
@@ -1604,9 +2727,11 @@ class EventsResource(SyncResource):
     def stream(
         self,
         *,
-        expand: t.Optional["EventExpand"] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["EventFilters", t.Dict[str, t.Any]]] = None,
+        expand: t.Optional[t.Union["EventExpand", "EventExpandParam"]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["EventFilters", "EventFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> t.Iterator["Event"]:
         for item in self._stream(
             "GET",
@@ -1618,7 +2743,9 @@ class EventsResource(SyncResource):
 
 
 class FilesResource(SyncResource):
-    def get(self, id: str, *, expand: t.Optional["FileExpand"] = None) -> "File":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["FileExpand", "FileExpandParam"]] = None
+    ) -> "File":
         return self._request(
             "GET",
             "/v1/files/{id}",
@@ -1639,11 +2766,13 @@ class FilesResource(SyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["FileExpand"] = None,
+        expand: t.Optional[t.Union["FileExpand", "FileExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["FileFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["FileFilters", "FileFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["File"]:
         return self._request_page(
             "GET",
@@ -1659,7 +2788,7 @@ class FilesResource(SyncResource):
         )
 
     def create(
-        self, *, file: t.Optional[str] = None, purpose: t.Optional["FilePurpose"] = None
+        self, *, file: t.Optional[FileInput] = None, purpose: t.Optional["FilePurpose"] = None
     ) -> "File":
         return self._request(
             "POST",
@@ -1682,18 +2811,23 @@ class InvoicesResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["InvoiceExpand"] = None,
+        expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None,
         customer: t.Optional[str] = None,
-        billing_address: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        billing_address: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_at: t.Optional[int] = None,
-        days_until_due: t.Optional[int] = None,
-        metadata: t.Optional["MetadataInput"] = None,
-        attachments: t.Optional[t.List[str]] = None,
-        memo: t.Optional[str] = None,
-        footer: t.Optional[str] = None,
-        custom_fields: t.Optional[t.Dict[str, t.Any]] = None,
+        discounts: t.Optional[t.Sequence[t.Union["DiscountInput", "DiscountInputParam"]]] = None,
+        due_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        attachments: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        footer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        custom_fields: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
     ) -> "Invoice":
         return self._request(
@@ -1703,16 +2837,19 @@ class InvoicesResource(SyncResource):
             query={"expand": expand},
             body={
                 "customer": customer,
-                "billing_address": billing_address,
-                "shipping_details": shipping_details,
+                "billing_address": _as_nullable(billing_address),
+                "shipping_details": _as_nullable(shipping_details),
                 "line_items": line_items,
-                "due_at": due_at,
-                "days_until_due": days_until_due,
-                "metadata": metadata,
-                "attachments": attachments,
-                "memo": memo,
-                "footer": footer,
-                "custom_fields": custom_fields,
+                "discounts": discounts,
+                "due_at": _as_nullable(due_at),
+                "days_until_due": _as_nullable(days_until_due),
+                "collection_method": collection_method,
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+                "attachments": _as_nullable(attachments),
+                "memo": _as_nullable(memo),
+                "footer": _as_nullable(footer),
+                "custom_fields": _as_nullable(custom_fields),
                 "default_taxes": default_taxes,
             },
         )
@@ -1720,11 +2857,13 @@ class InvoicesResource(SyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["InvoiceExpand"] = None,
+        expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["InvoiceFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["InvoiceFilters", "InvoiceFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Invoice"]:
         return self._request_page(
             "GET",
@@ -1747,7 +2886,9 @@ class InvoicesResource(SyncResource):
             path_params={"id": id},
         )
 
-    def get(self, id: str, *, expand: t.Optional["InvoiceExpand"] = None) -> "Invoice":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None
+    ) -> "Invoice":
         return self._request(
             "GET",
             "/v1/invoices/{id}",
@@ -1760,18 +2901,23 @@ class InvoicesResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["InvoiceExpand"] = None,
+        expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None,
         customer: t.Optional[str] = None,
-        billing_address: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        billing_address: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_at: t.Optional[int] = None,
-        days_until_due: t.Optional[int] = None,
-        metadata: t.Optional["MetadataInput"] = None,
-        attachments: t.Optional[t.List[str]] = None,
-        memo: t.Optional[str] = None,
-        footer: t.Optional[str] = None,
-        custom_fields: t.Optional[t.Dict[str, t.Any]] = None,
+        discounts: t.Optional[t.Sequence[t.Union["DiscountInput", "DiscountInputParam"]]] = None,
+        due_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        attachments: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        footer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        custom_fields: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
     ) -> "Invoice":
         return self._request(
@@ -1782,16 +2928,19 @@ class InvoicesResource(SyncResource):
             query={"expand": expand},
             body={
                 "customer": customer,
-                "billing_address": billing_address,
-                "shipping_details": shipping_details,
+                "billing_address": _as_nullable(billing_address),
+                "shipping_details": _as_nullable(shipping_details),
                 "line_items": line_items,
-                "due_at": due_at,
-                "days_until_due": days_until_due,
-                "metadata": metadata,
-                "attachments": attachments,
-                "memo": memo,
-                "footer": footer,
-                "custom_fields": custom_fields,
+                "discounts": discounts,
+                "due_at": _as_nullable(due_at),
+                "days_until_due": _as_nullable(days_until_due),
+                "collection_method": collection_method,
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+                "attachments": _as_nullable(attachments),
+                "memo": _as_nullable(memo),
+                "footer": _as_nullable(footer),
+                "custom_fields": _as_nullable(custom_fields),
                 "default_taxes": default_taxes,
             },
         )
@@ -1820,7 +2969,7 @@ class InvoicesResource(SyncResource):
             path_params={"id": id},
         )
 
-    def pdf(self, id: t.Union[str, t.Literal["preview"]]) -> t.Any:
+    def pdf(self, id: str) -> t.Any:
         return self._request(
             "GET",
             "/v1/invoices/{id}/pdf",
@@ -1836,13 +2985,13 @@ class InvoicesResource(SyncResource):
             path_params={"id": id},
         )
 
-    def send(self, id: str, *, email: t.Optional[str] = None) -> "Invoice":
+    def send(self, id: str, *, email: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN) -> "Invoice":
         return self._request(
             "POST",
             "/v1/invoices/{id}/send",
             cast_to=Invoice,
             path_params={"id": id},
-            body={"email": email},
+            body={"email": _as_nullable(email)},
         )
 
     def void(self, id: str) -> "Invoice":
@@ -1870,7 +3019,8 @@ class PaymentMethodsResource(SyncResource):
         *,
         expand: t.Optional[t.Dict[str, t.Any]] = None,
         billing_details: t.Optional[t.Dict[str, t.Any]] = None,
-        customer: t.Optional[str] = None,
+        customer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        allow_redisplay: t.Optional["PaymentMethodAllowRedisplay"] = None,
     ) -> "PaymentMethod":
         return self._request(
             "PATCH",
@@ -1878,7 +3028,11 @@ class PaymentMethodsResource(SyncResource):
             cast_to=PaymentMethod,
             path_params={"id": id},
             query={"expand": expand},
-            body={"billing_details": billing_details, "customer": customer},
+            body={
+                "billing_details": billing_details,
+                "customer": _as_nullable(customer),
+                "allow_redisplay": allow_redisplay,
+            },
         )
 
     def list(
@@ -1887,8 +3041,12 @@ class PaymentMethodsResource(SyncResource):
         expand: t.Optional[t.Dict[str, t.Any]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["PaymentMethodFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union["PaymentMethodFilters", "PaymentMethodFiltersParam"], t.Dict[str, t.Any]
+            ]
+        ] = None,
     ) -> SyncPage["PaymentMethod"]:
         return self._request_page(
             "GET",
@@ -1916,15 +3074,22 @@ class PaymentsResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["PaymentExpand"] = None,
+        expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None,
         amount: t.Optional[int] = None,
         capture_method: t.Optional[t.Literal["automatic", "manual"]] = None,
-        customer: t.Optional[str] = None,
-        description: t.Optional[str] = None,
-        invoice: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
-        payment_method: t.Optional[t.Union[str, "PaymentMethodCreate"]] = None,
-        statement_descriptor: t.Optional[str] = None,
+        customer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        invoice: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        mandate_data: t.Optional[t.Dict[str, t.Any]] = None,
+        off_session: t.Optional[bool] = None,
+        recurring: t.Optional[bool] = None,
+        payment_method: t.Optional[
+            t.Union[str, t.Union["PaymentMethodCreate", "PaymentMethodCreateParam"]]
+        ] = None,
+        statement_descriptor: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
     ) -> "Payment":
         return self._request(
             "POST",
@@ -1934,23 +3099,28 @@ class PaymentsResource(SyncResource):
             body={
                 "amount": amount,
                 "capture_method": capture_method,
-                "customer": customer,
-                "description": description,
-                "invoice": invoice,
-                "metadata": metadata,
+                "customer": _as_nullable(customer),
+                "description": _as_nullable(description),
+                "invoice": _as_nullable(invoice),
+                "metadata": _as_nullable(metadata),
+                "mandate_data": mandate_data,
+                "off_session": off_session,
+                "recurring": recurring,
                 "payment_method": payment_method,
-                "statement_descriptor": statement_descriptor,
+                "statement_descriptor": _as_nullable(statement_descriptor),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["PaymentExpand"] = None,
+        expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["PaymentFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["PaymentFilters", "PaymentFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Payment"]:
         return self._request_page(
             "GET",
@@ -1965,7 +3135,9 @@ class PaymentsResource(SyncResource):
             },
         )
 
-    def get(self, id: str, *, expand: t.Optional["PaymentExpand"] = None) -> "Payment":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None
+    ) -> "Payment":
         return self._request(
             "GET",
             "/v1/payments/{id}",
@@ -1978,8 +3150,10 @@ class PaymentsResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["PaymentExpand"] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Payment":
         return self._request(
             "PATCH",
@@ -1987,7 +3161,7 @@ class PaymentsResource(SyncResource):
             cast_to=Payment,
             path_params={"id": id},
             query={"expand": expand},
-            body={"metadata": metadata},
+            body={"metadata": _as_nullable(metadata)},
         )
 
     def capture(self, id: str) -> "Payment":
@@ -2011,13 +3185,18 @@ class PricesResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["PriceExpand"] = None,
+        expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None,
         product: t.Optional[str] = None,
-        active: t.Optional[bool] = None,
-        description: t.Optional[str] = None,
+        active: t.Union[t.Optional[bool], NotGiven] = NOT_GIVEN,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
         amount: t.Optional[int] = None,
-        type: t.Optional[t.Literal["one_time"]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        type: t.Optional[t.Literal["one_time", "recurring"]] = None,
+        recurring: t.Union[
+            t.Optional[t.Union["PriceRecurringInput", "PriceRecurringInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Price":
         return self._request(
             "POST",
@@ -2026,22 +3205,25 @@ class PricesResource(SyncResource):
             query={"expand": expand},
             body={
                 "product": product,
-                "active": active,
-                "description": description,
+                "active": _as_nullable(active),
+                "name": _as_nullable(name),
                 "amount": amount,
                 "type": type,
-                "metadata": metadata,
+                "recurring": _as_nullable(recurring),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["PriceExpand"] = None,
+        expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["PriceFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["PriceFilters", "PriceFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Price"]:
         return self._request_page(
             "GET",
@@ -2056,7 +3238,9 @@ class PricesResource(SyncResource):
             },
         )
 
-    def get(self, id: str, *, expand: t.Optional["PriceExpand"] = None) -> "Price":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None
+    ) -> "Price":
         return self._request(
             "GET",
             "/v1/prices/{id}",
@@ -2069,10 +3253,12 @@ class PricesResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["PriceExpand"] = None,
+        expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None,
         active: t.Optional[bool] = None,
-        description: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Price":
         return self._request(
             "PATCH",
@@ -2080,7 +3266,7 @@ class PricesResource(SyncResource):
             cast_to=Price,
             path_params={"id": id},
             query={"expand": expand},
-            body={"active": active, "description": description, "metadata": metadata},
+            body={"active": active, "name": _as_nullable(name), "metadata": _as_nullable(metadata)},
         )
 
 
@@ -2088,12 +3274,16 @@ class ProductsResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["ProductExpand"] = None,
+        expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None,
         name: t.Optional[str] = None,
-        description: t.Optional[str] = None,
-        active: t.Optional[bool] = None,
-        images: t.Optional[t.List[str]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        sku: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        attributes: t.Optional[t.Union["ProductAttributes", "ProductAttributesParam"]] = None,
+        active: t.Union[t.Optional[bool], NotGiven] = NOT_GIVEN,
+        images: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Product":
         return self._request(
             "POST",
@@ -2102,21 +3292,25 @@ class ProductsResource(SyncResource):
             query={"expand": expand},
             body={
                 "name": name,
-                "description": description,
-                "active": active,
-                "images": images,
-                "metadata": metadata,
+                "description": _as_nullable(description),
+                "sku": _as_nullable(sku),
+                "attributes": attributes,
+                "active": _as_nullable(active),
+                "images": _as_nullable(images),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["ProductExpand"] = None,
+        expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["ProductFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["ProductFilters", "ProductFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Product"]:
         return self._request_page(
             "GET",
@@ -2139,7 +3333,9 @@ class ProductsResource(SyncResource):
             path_params={"id": id},
         )
 
-    def get(self, id: str, *, expand: t.Optional["ProductExpand"] = None) -> "Product":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None
+    ) -> "Product":
         return self._request(
             "GET",
             "/v1/products/{id}",
@@ -2152,13 +3348,17 @@ class ProductsResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["ProductExpand"] = None,
+        expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None,
         name: t.Optional[str] = None,
-        description: t.Optional[str] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        sku: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        attributes: t.Optional[t.Union["ProductAttributes", "ProductAttributesParam"]] = None,
         active: t.Optional[bool] = None,
-        default_price: t.Optional[str] = None,
-        images: t.Optional[t.List[str]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        default_price: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        images: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Product":
         return self._request(
             "PATCH",
@@ -2168,17 +3368,21 @@ class ProductsResource(SyncResource):
             query={"expand": expand},
             body={
                 "name": name,
-                "description": description,
+                "description": _as_nullable(description),
+                "sku": _as_nullable(sku),
+                "attributes": attributes,
                 "active": active,
-                "default_price": default_price,
-                "images": images,
-                "metadata": metadata,
+                "default_price": _as_nullable(default_price),
+                "images": _as_nullable(images),
+                "metadata": _as_nullable(metadata),
             },
         )
 
 
 class RefundsResource(SyncResource):
-    def get(self, id: str, *, expand: t.Optional["RefundExpand"] = None) -> "Refund":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["RefundExpand", "RefundExpandParam"]] = None
+    ) -> "Refund":
         return self._request(
             "GET",
             "/v1/refunds/{id}",
@@ -2190,11 +3394,13 @@ class RefundsResource(SyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["RefundExpand"] = None,
+        expand: t.Optional[t.Union["RefundExpand", "RefundExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["RefundFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["RefundFilters", "RefundFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["Refund"]:
         return self._request_page(
             "GET",
@@ -2212,7 +3418,7 @@ class RefundsResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["RefundExpand"] = None,
+        expand: t.Optional[t.Union["RefundExpand", "RefundExpandParam"]] = None,
         payment: t.Optional[str] = None,
         amount: t.Optional[int] = None,
     ) -> "Refund":
@@ -2226,7 +3432,9 @@ class RefundsResource(SyncResource):
 
 
 class RequestsResource(SyncResource):
-    def get(self, id: str, *, expand: t.Optional["RequestExpand"] = None) -> "Request":
+    def get(
+        self, id: str, *, expand: t.Optional[t.Union["RequestExpand", "RequestExpandParam"]] = None
+    ) -> "Request":
         return self._request(
             "GET",
             "/v1/requests/{id}",
@@ -2236,15 +3444,75 @@ class RequestsResource(SyncResource):
         )
 
 
+class MandatesResource(SyncResource):
+    def create(
+        self,
+        *,
+        payment_method: t.Optional[str] = None,
+        customer_acceptance: t.Optional["MandateCustomerAcceptanceInput"] = None,
+        authorization_text: t.Optional[str] = None,
+    ) -> "Mandate":
+        return self._request(
+            "POST",
+            "/v1/mandates",
+            cast_to=Mandate,
+            body={
+                "payment_method": payment_method,
+                "customer_acceptance": customer_acceptance,
+                "authorization_text": authorization_text,
+            },
+        )
+
+    def list(
+        self,
+        *,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["MandateFilters", "MandateFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
+    ) -> SyncPage["Mandate"]:
+        return self._request_page(
+            "GET",
+            "/v1/mandates",
+            item_type=Mandate,
+            query={
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    def get(self, id: str) -> "Mandate":
+        return self._request(
+            "GET",
+            "/v1/mandates/{id}",
+            cast_to=Mandate,
+            path_params={"id": id},
+        )
+
+    def revoke(self, id: str) -> "Mandate":
+        return self._request(
+            "POST",
+            "/v1/mandates/{id}/revoke",
+            cast_to=Mandate,
+            path_params={"id": id},
+        )
+
+
 class ShippingRatesResource(SyncResource):
     def create(
         self,
         *,
-        expand: t.Optional["ShippingRateExpand"] = None,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
         display_name: t.Optional[str] = None,
         amount: t.Optional[int] = None,
-        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        delivery_estimate: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "ShippingRate":
         return self._request(
             "POST",
@@ -2254,19 +3522,21 @@ class ShippingRatesResource(SyncResource):
             body={
                 "display_name": display_name,
                 "amount": amount,
-                "delivery_estimate": delivery_estimate,
-                "metadata": metadata,
+                "delivery_estimate": _as_nullable(delivery_estimate),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["ShippingRateExpand"] = None,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["ShippingRateFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["ShippingRateFilters", "ShippingRateFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> SyncPage["ShippingRate"]:
         return self._request_page(
             "GET",
@@ -2281,7 +3551,12 @@ class ShippingRatesResource(SyncResource):
             },
         )
 
-    def get(self, id: str, *, expand: t.Optional["ShippingRateExpand"] = None) -> "ShippingRate":
+    def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
+    ) -> "ShippingRate":
         return self._request(
             "GET",
             "/v1/shipping_rates/{id}",
@@ -2294,11 +3569,13 @@ class ShippingRatesResource(SyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["ShippingRateExpand"] = None,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
         active: t.Optional[bool] = None,
         display_name: t.Optional[str] = None,
-        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        delivery_estimate: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "ShippingRate":
         return self._request(
             "PATCH",
@@ -2309,43 +3586,315 @@ class ShippingRatesResource(SyncResource):
             body={
                 "active": active,
                 "display_name": display_name,
-                "delivery_estimate": delivery_estimate,
-                "metadata": metadata,
+                "delivery_estimate": _as_nullable(delivery_estimate),
+                "metadata": _as_nullable(metadata),
             },
         )
 
 
-class AsyncCheckoutAddressResource(AsyncResource):
-    async def autocomplete(
-        self, *, input: t.Optional[str] = None, country: t.Optional["CountryCode"] = None
-    ) -> t.List["AddressAutocompleteSuggestion"]:
-        return await self._request(
+class SubscriptionsResource(SyncResource):
+    def create(
+        self,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        customer: t.Optional[str] = None,
+        items: t.Optional[
+            t.Sequence[t.Union["SubscriptionItemCreate", "SubscriptionItemCreateParam"]]
+        ] = None,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        off_session: t.Optional[bool] = None,
+        payment_behavior: t.Optional["SubscriptionPaymentBehavior"] = None,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        trial_period_days: t.Optional[int] = None,
+        trial_end_at: t.Optional[int] = None,
+        cancel_at: t.Union[t.Optional[t.Union[t.Literal["period_end"], int]], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        shipping_rate: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "Subscription":
+        return self._request(
+            "POST",
+            "/v1/subscriptions",
+            cast_to=Subscription,
+            query={"expand": expand},
+            body={
+                "customer": customer,
+                "items": items,
+                "default_payment_method": _as_nullable(default_payment_method),
+                "collection_method": collection_method,
+                "off_session": off_session,
+                "payment_behavior": payment_behavior,
+                "days_until_due": _as_nullable(days_until_due),
+                "default_taxes": default_taxes,
+                "trial_period_days": trial_period_days,
+                "trial_end_at": trial_end_at,
+                "cancel_at": _as_nullable(cancel_at),
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_rate": _as_nullable(shipping_rate),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["SubscriptionFilters", "SubscriptionFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
+    ) -> SyncPage["Subscription"]:
+        return self._request_page(
             "GET",
-            "/v1/checkout/address/autocomplete",
-            cast_to=None,
-            query={"input": input, "country": country},
+            "/v1/subscriptions",
+            item_type=Subscription,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    def upcoming_invoice(
+        self,
+        id: str,
+        *,
+        items: t.Optional[
+            t.Sequence[t.Union["SubscriptionItemUpdate", "SubscriptionItemUpdateParam"]]
+        ] = None,
+        apply_at: t.Optional["SubscriptionChangeApplyAt"] = None,
+        proration_behavior: t.Optional["SubscriptionProrationBehavior"] = None,
+        proration_at: t.Optional[int] = None,
+    ) -> "UpcomingInvoice":
+        return self._request(
+            "GET",
+            "/v1/subscriptions/{id}/upcoming_invoice",
+            cast_to=UpcomingInvoice,
+            path_params={"id": id},
+            query={
+                "items": items,
+                "apply_at": apply_at,
+                "proration_behavior": proration_behavior,
+                "proration_at": proration_at,
+            },
+        )
+
+    def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+    ) -> "Subscription":
+        return self._request(
+            "GET",
+            "/v1/subscriptions/{id}",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    def update(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        items: t.Optional[
+            t.Sequence[t.Union["SubscriptionItemUpdate", "SubscriptionItemUpdateParam"]]
+        ] = None,
+        apply_at: t.Optional["SubscriptionChangeApplyAt"] = None,
+        proration_behavior: t.Optional["SubscriptionProrationBehavior"] = None,
+        proration_at: t.Optional[int] = None,
+        payment_behavior: t.Optional["SubscriptionPaymentBehavior"] = None,
+        pending_change: t.Union[t.Optional[None], NotGiven] = NOT_GIVEN,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        trial_end_at: t.Optional[t.Union[t.Literal["now"], int]] = None,
+        cancel_at: t.Union[t.Optional[t.Union[t.Literal["period_end"], int]], NotGiven] = NOT_GIVEN,
+        cancellation_details: t.Optional[
+            t.Union[
+                "SubscriptionCancellationDetailsInput", "SubscriptionCancellationDetailsInputParam"
+            ]
+        ] = None,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        shipping_rate: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "Subscription":
+        return self._request(
+            "PATCH",
+            "/v1/subscriptions/{id}",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={
+                "items": items,
+                "apply_at": apply_at,
+                "proration_behavior": proration_behavior,
+                "proration_at": proration_at,
+                "payment_behavior": payment_behavior,
+                "pending_change": _as_nullable(pending_change),
+                "default_payment_method": _as_nullable(default_payment_method),
+                "collection_method": collection_method,
+                "days_until_due": _as_nullable(days_until_due),
+                "default_taxes": default_taxes,
+                "trial_end_at": trial_end_at,
+                "cancel_at": _as_nullable(cancel_at),
+                "cancellation_details": cancellation_details,
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_rate": _as_nullable(shipping_rate),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+    def cancel(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        prorate: t.Optional[bool] = None,
+        unused_credit: t.Optional[t.Literal["keep", "refund"]] = None,
+        cancellation_details: t.Optional[
+            t.Union[
+                "SubscriptionCancellationDetailsInput", "SubscriptionCancellationDetailsInputParam"
+            ]
+        ] = None,
+    ) -> "Subscription":
+        return self._request(
+            "POST",
+            "/v1/subscriptions/{id}/cancel",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={
+                "prorate": prorate,
+                "unused_credit": unused_credit,
+                "cancellation_details": cancellation_details,
+            },
+        )
+
+    def pause(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        resumes_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+    ) -> "Subscription":
+        return self._request(
+            "POST",
+            "/v1/subscriptions/{id}/pause",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={"resumes_at": _as_nullable(resumes_at)},
+        )
+
+    def resume(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+    ) -> "Subscription":
+        return self._request(
+            "POST",
+            "/v1/subscriptions/{id}/resume",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
         )
 
 
-class AsyncCheckoutResource(AsyncResource):
-    address: AsyncCheckoutAddressResource
+class BillingPortalSessionsResource(SyncResource):
+    def create(
+        self,
+        *,
+        customer: t.Optional[str] = None,
+        subscription: t.Optional[str] = None,
+        return_url: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        flow: t.Optional[
+            t.Union["BillingPortalSessionFlowInput", "BillingPortalSessionFlowInputParam"]
+        ] = None,
+    ) -> "BillingPortalSession":
+        return self._request(
+            "POST",
+            "/v1/billing_portal/sessions",
+            cast_to=BillingPortalSession,
+            body={
+                "customer": customer,
+                "subscription": subscription,
+                "return_url": _as_nullable(return_url),
+                "flow": flow,
+            },
+        )
+
+
+class BillingPortalResource(SyncResource):
+    sessions: BillingPortalSessionsResource
 
     def __init__(self, client):
         super().__init__(client)
-        self.address = AsyncCheckoutAddressResource(client)
+        self.sessions = BillingPortalSessionsResource(client)
+
+
+class AsyncCheckoutSessionsDiscountCodeResource(AsyncResource):
+    async def apply(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+        code: t.Optional[str] = None,
+    ) -> "CheckoutSession":
+        return await self._request(
+            "POST",
+            "/v1/checkout_sessions/{id}/discount_code",
+            cast_to=CheckoutSession,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={"code": code},
+        )
+
+    async def remove(
+        self,
+        id: str,
+        discount: str,
+        *,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+    ) -> "CheckoutSession":
+        return await self._request(
+            "DELETE",
+            "/v1/checkout_sessions/{id}/discount_code/{discount}",
+            cast_to=CheckoutSession,
+            path_params={"id": id, "discount": discount},
+            query={"expand": expand},
+        )
 
 
 class AsyncCheckoutSessionsResource(AsyncResource):
-    async def public_key(self, id: str) -> t.Dict[str, t.Any]:
-        return await self._request(
-            "GET",
-            "/v1/checkout_sessions/{id}/public_key",
-            cast_to=None,
-            path_params={"id": id},
-        )
+    discount_code: AsyncCheckoutSessionsDiscountCodeResource
+
+    def __init__(self, client):
+        super().__init__(client)
+        self.discount_code = AsyncCheckoutSessionsDiscountCodeResource(client)
 
     async def get(
-        self, id: str, *, expand: t.Optional["CheckoutSessionExpand"] = None
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
     ) -> "CheckoutSession":
         return await self._request(
             "GET",
@@ -2359,17 +3908,29 @@ class AsyncCheckoutSessionsResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["CheckoutSessionExpand"] = None,
-        amount: t.Optional[int] = None,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+        allow_discount_codes: t.Optional[bool] = None,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        discounts: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
-        billing_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
-        shipping_rate: t.Optional[str] = None,
-        dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_address_collection: t.Union[
+            t.Optional["ShippingAddressCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        billing_details_collection: t.Union[
+            t.Optional["BillingDetailsCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        phone_number_collection: t.Optional[bool] = None,
+        billing_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_options: t.Union[
+            t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]], NotGiven
+        ] = NOT_GIVEN,
+        shipping_rate: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        dual_pricing: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "CheckoutSession":
         return await self._request(
             "PATCH",
@@ -2378,27 +3939,35 @@ class AsyncCheckoutSessionsResource(AsyncResource):
             path_params={"id": id},
             query={"expand": expand},
             body={
-                "amount": amount,
+                "allow_discount_codes": allow_discount_codes,
                 "line_items": line_items,
+                "discounts": discounts,
                 "customer": customer,
                 "customer_details": customer_details,
-                "shipping_details": shipping_details,
-                "billing_details": billing_details,
-                "shipping_options": shipping_options,
-                "shipping_rate": shipping_rate,
-                "dual_pricing": dual_pricing,
-                "metadata": metadata,
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_address_collection": _as_nullable(shipping_address_collection),
+                "billing_details_collection": _as_nullable(billing_details_collection),
+                "phone_number_collection": phone_number_collection,
+                "billing_details": _as_nullable(billing_details),
+                "shipping_options": _as_nullable(shipping_options),
+                "shipping_rate": _as_nullable(shipping_rate),
+                "dual_pricing": _as_nullable(dual_pricing),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["CheckoutSessionExpand"] = None,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["CheckoutSessionFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union["CheckoutSessionFilters", "CheckoutSessionFiltersParam"], t.Dict[str, t.Any]
+            ]
+        ] = None,
     ) -> AsyncPaginator["CheckoutSession"]:
         return self._request_page(
             "GET",
@@ -2416,20 +3985,36 @@ class AsyncCheckoutSessionsResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["CheckoutSessionExpand"] = None,
-        amount: t.Optional[int] = None,
-        line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        expand: t.Optional[t.Union["CheckoutSessionExpand", "CheckoutSessionExpandParam"]] = None,
+        allow_discount_codes: t.Optional[bool] = None,
+        line_items: t.Union[t.Optional[t.List[t.Dict[str, t.Any]]], NotGiven] = NOT_GIVEN,
+        discounts: t.Optional[t.Sequence[t.Union["DiscountInput", "DiscountInputParam"]]] = None,
         customer: t.Optional[str] = None,
         customer_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_options: t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]] = None,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_address_collection: t.Union[
+            t.Optional["ShippingAddressCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        billing_details_collection: t.Union[
+            t.Optional["BillingDetailsCollectionInput"], NotGiven
+        ] = NOT_GIVEN,
+        phone_number_collection: t.Optional[bool] = None,
+        shipping_options: t.Union[
+            t.Optional[t.List[t.Union[str, t.Dict[str, t.Any]]]], NotGiven
+        ] = NOT_GIVEN,
         invoice: t.Optional[str] = None,
-        dual_pricing: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        dual_pricing: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
         mode: t.Optional["SessionMode"] = None,
-        payment_method_types: t.Optional[t.List[t.Literal["card", "us_bank_account"]]] = None,
+        payment_method_types: t.Optional[
+            t.List[t.Literal["card", "us_bank_account", "apple_pay"]]
+        ] = None,
         submit_label: t.Optional["SessionSubmitLabel"] = None,
-        success_url: t.Optional[str] = None,
+        success_url: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        subscription_data: t.Optional[t.Dict[str, t.Any]] = None,
+        subscription: t.Optional[str] = None,
     ) -> "CheckoutSession":
         return await self._request(
             "POST",
@@ -2437,19 +4022,25 @@ class AsyncCheckoutSessionsResource(AsyncResource):
             cast_to=CheckoutSession,
             query={"expand": expand},
             body={
-                "amount": amount,
-                "line_items": line_items,
+                "allow_discount_codes": allow_discount_codes,
+                "line_items": _as_nullable(line_items),
+                "discounts": discounts,
                 "customer": customer,
                 "customer_details": customer_details,
-                "shipping_details": shipping_details,
-                "shipping_options": shipping_options,
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_address_collection": _as_nullable(shipping_address_collection),
+                "billing_details_collection": _as_nullable(billing_details_collection),
+                "phone_number_collection": phone_number_collection,
+                "shipping_options": _as_nullable(shipping_options),
                 "invoice": invoice,
-                "dual_pricing": dual_pricing,
-                "metadata": metadata,
+                "dual_pricing": _as_nullable(dual_pricing),
+                "metadata": _as_nullable(metadata),
                 "mode": mode,
                 "payment_method_types": payment_method_types,
                 "submit_label": submit_label,
-                "success_url": success_url,
+                "success_url": _as_nullable(success_url),
+                "subscription_data": subscription_data,
+                "subscription": subscription,
             },
         )
 
@@ -2466,12 +4057,18 @@ class AsyncCreditNotesResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["CreditNoteExpand"] = None,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
         invoice: t.Optional[str] = None,
-        line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        line_items: t.Optional[t.Sequence["CreditNoteLineItemCreate"]] = None,
+        reason: t.Optional["CreditNoteReason"] = None,
+        refund_amount: t.Optional[int] = None,
+        credit_amount: t.Optional[int] = None,
+        out_of_band_amount: t.Optional[int] = None,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        memo: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "CreditNote":
         return await self._request(
             "POST",
@@ -2481,20 +4078,26 @@ class AsyncCreditNotesResource(AsyncResource):
             body={
                 "invoice": invoice,
                 "line_items": line_items,
+                "reason": reason,
+                "refund_amount": refund_amount,
+                "credit_amount": credit_amount,
+                "out_of_band_amount": out_of_band_amount,
                 "default_taxes": default_taxes,
-                "memo": memo,
-                "metadata": metadata,
+                "memo": _as_nullable(memo),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["CreditNoteExpand"] = None,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["CreditNoteFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["CreditNoteFilters", "CreditNoteFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["CreditNote"]:
         return self._request_page(
             "GET",
@@ -2509,7 +4112,12 @@ class AsyncCreditNotesResource(AsyncResource):
             },
         )
 
-    async def get(self, id: str, *, expand: t.Optional["CreditNoteExpand"] = None) -> "CreditNote":
+    async def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
+    ) -> "CreditNote":
         return await self._request(
             "GET",
             "/v1/credit_notes/{id}",
@@ -2522,11 +4130,13 @@ class AsyncCreditNotesResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["CreditNoteExpand"] = None,
-        line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        expand: t.Optional[t.Union["CreditNoteExpand", "CreditNoteExpandParam"]] = None,
+        line_items: t.Optional[t.Sequence["CreditNoteLineItemCreate"]] = None,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        memo: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "CreditNote":
         return await self._request(
             "PATCH",
@@ -2537,8 +4147,8 @@ class AsyncCreditNotesResource(AsyncResource):
             body={
                 "line_items": line_items,
                 "default_taxes": default_taxes,
-                "memo": memo,
-                "metadata": metadata,
+                "memo": _as_nullable(memo),
+                "metadata": _as_nullable(metadata),
             },
         )
 
@@ -2551,20 +4161,129 @@ class AsyncCreditNotesResource(AsyncResource):
         )
 
 
+class AsyncCustomerBalanceTransactionsResource(AsyncResource):
+    async def create(
+        self,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+        customer: t.Optional[str] = None,
+        amount: t.Optional[int] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "CustomerBalanceTransaction":
+        return await self._request(
+            "POST",
+            "/v1/customer_balance_transactions",
+            cast_to=CustomerBalanceTransaction,
+            query={"expand": expand},
+            body={
+                "customer": customer,
+                "amount": amount,
+                "description": _as_nullable(description),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union[
+                    "CustomerBalanceTransactionFilters", "CustomerBalanceTransactionFiltersParam"
+                ],
+                t.Dict[str, t.Any],
+            ]
+        ] = None,
+    ) -> AsyncPaginator["CustomerBalanceTransaction"]:
+        return self._request_page(
+            "GET",
+            "/v1/customer_balance_transactions",
+            item_type=CustomerBalanceTransaction,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    async def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+    ) -> "CustomerBalanceTransaction":
+        return await self._request(
+            "GET",
+            "/v1/customer_balance_transactions/{id}",
+            cast_to=CustomerBalanceTransaction,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    async def update(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[
+            t.Union["CustomerBalanceTransactionExpand", "CustomerBalanceTransactionExpandParam"]
+        ] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "CustomerBalanceTransaction":
+        return await self._request(
+            "PATCH",
+            "/v1/customer_balance_transactions/{id}",
+            cast_to=CustomerBalanceTransaction,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={"description": _as_nullable(description), "metadata": _as_nullable(metadata)},
+        )
+
+
 class AsyncCustomersResource(AsyncResource):
     async def create(
         self,
         *,
-        name: t.Optional[str] = None,
-        email: t.Optional[str] = None,
-        phone: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        email: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        phone: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Customer":
         return await self._request(
             "POST",
             "/v1/customers",
             cast_to=Customer,
-            body={"name": name, "email": email, "phone": phone, "metadata": metadata},
+            body={
+                "name": _as_nullable(name),
+                "email": _as_nullable(email),
+                "phone": _as_nullable(phone),
+                "shipping_details": _as_nullable(shipping_details),
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+            },
         )
 
     def list(
@@ -2572,8 +4291,10 @@ class AsyncCustomersResource(AsyncResource):
         *,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["CustomerFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["CustomerFilters", "CustomerFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Customer"]:
         return self._request_page(
             "GET",
@@ -2607,17 +4328,72 @@ class AsyncCustomersResource(AsyncResource):
         self,
         id: str,
         *,
-        name: t.Optional[str] = None,
-        email: t.Optional[str] = None,
-        phone: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        email: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        phone: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Customer":
         return await self._request(
             "PATCH",
             "/v1/customers/{id}",
             cast_to=Customer,
             path_params={"id": id},
-            body={"name": name, "email": email, "phone": phone, "metadata": metadata},
+            body={
+                "name": _as_nullable(name),
+                "email": _as_nullable(email),
+                "phone": _as_nullable(phone),
+                "shipping_details": _as_nullable(shipping_details),
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+
+class AsyncAppliedDiscountsResource(AsyncResource):
+    async def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["AppliedDiscountExpand", "AppliedDiscountExpandParam"]] = None,
+    ) -> "AppliedDiscount":
+        return await self._request(
+            "GET",
+            "/v1/applied_discounts/{id}",
+            cast_to=AppliedDiscount,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional[t.Union["AppliedDiscountExpand", "AppliedDiscountExpandParam"]] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union["AppliedDiscountFilters", "AppliedDiscountFiltersParam"], t.Dict[str, t.Any]
+            ]
+        ] = None,
+    ) -> AsyncPaginator["AppliedDiscount"]:
+        return self._request_page(
+            "GET",
+            "/v1/applied_discounts",
+            item_type=AppliedDiscount,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
         )
 
 
@@ -2625,13 +4401,21 @@ class AsyncDiscountsResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["DiscountExpand"] = None,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
         name: t.Optional[str] = None,
-        amount_off: t.Optional[int] = None,
-        percent_off: t.Optional[float] = None,
-        promotion_code: t.Optional[str] = None,
-        applies_to: t.Optional[t.List[str]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        code: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        active: t.Optional[bool] = None,
+        amount_off: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        percent_off: t.Union[t.Optional[float], NotGiven] = NOT_GIVEN,
+        expires_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        max_redemptions: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        minimum_amount: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        first_purchase_only: t.Optional[bool] = None,
+        once_per_customer: t.Optional[bool] = None,
+        applies_to: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Discount":
         return await self._request(
             "POST",
@@ -2640,22 +4424,30 @@ class AsyncDiscountsResource(AsyncResource):
             query={"expand": expand},
             body={
                 "name": name,
-                "amount_off": amount_off,
-                "percent_off": percent_off,
-                "promotion_code": promotion_code,
-                "applies_to": applies_to,
-                "metadata": metadata,
+                "code": _as_nullable(code),
+                "active": active,
+                "amount_off": _as_nullable(amount_off),
+                "percent_off": _as_nullable(percent_off),
+                "expires_at": _as_nullable(expires_at),
+                "max_redemptions": _as_nullable(max_redemptions),
+                "minimum_amount": _as_nullable(minimum_amount),
+                "first_purchase_only": first_purchase_only,
+                "once_per_customer": once_per_customer,
+                "applies_to": _as_nullable(applies_to),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["DiscountExpand"] = None,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["DiscountFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["DiscountFilters", "DiscountFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Discount"]:
         return self._request_page(
             "GET",
@@ -2678,7 +4470,12 @@ class AsyncDiscountsResource(AsyncResource):
             path_params={"id": id},
         )
 
-    async def get(self, id: str, *, expand: t.Optional["DiscountExpand"] = None) -> "Discount":
+    async def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
+    ) -> "Discount":
         return await self._request(
             "GET",
             "/v1/discounts/{id}",
@@ -2691,10 +4488,12 @@ class AsyncDiscountsResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["DiscountExpand"] = None,
+        expand: t.Optional[t.Union["DiscountExpand", "DiscountExpandParam"]] = None,
         name: t.Optional[str] = None,
-        promotion_code: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        active: t.Optional[bool] = None,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Discount":
         return await self._request(
             "PATCH",
@@ -2702,12 +4501,14 @@ class AsyncDiscountsResource(AsyncResource):
             cast_to=Discount,
             path_params={"id": id},
             query={"expand": expand},
-            body={"name": name, "promotion_code": promotion_code, "metadata": metadata},
+            body={"name": name, "active": active, "metadata": _as_nullable(metadata)},
         )
 
 
 class AsyncDisputesResource(AsyncResource):
-    async def get(self, id: str, *, expand: t.Optional["DisputeExpand"] = None) -> "Dispute":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["DisputeExpand", "DisputeExpandParam"]] = None
+    ) -> "Dispute":
         return await self._request(
             "GET",
             "/v1/disputes/{id}",
@@ -2720,10 +4521,13 @@ class AsyncDisputesResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["DisputeExpand"] = None,
+        expand: t.Optional[t.Union["DisputeExpand", "DisputeExpandParam"]] = None,
         evidence: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
         submit: t.Optional[bool] = None,
+        loss_accepted: t.Optional[bool] = None,
     ) -> "Dispute":
         return await self._request(
             "PATCH",
@@ -2731,17 +4535,24 @@ class AsyncDisputesResource(AsyncResource):
             cast_to=Dispute,
             path_params={"id": id},
             query={"expand": expand},
-            body={"evidence": evidence, "metadata": metadata, "submit": submit},
+            body={
+                "evidence": evidence,
+                "metadata": _as_nullable(metadata),
+                "submit": submit,
+                "loss_accepted": loss_accepted,
+            },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["DisputeExpand"] = None,
+        expand: t.Optional[t.Union["DisputeExpand", "DisputeExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["DisputeFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["DisputeFilters", "DisputeFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Dispute"]:
         return self._request_page(
             "GET",
@@ -2758,7 +4569,9 @@ class AsyncDisputesResource(AsyncResource):
 
 
 class AsyncEventsResource(AsyncResource):
-    async def get(self, id: str, *, expand: t.Optional["EventExpand"] = None) -> "Event":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["EventExpand", "EventExpandParam"]] = None
+    ) -> "Event":
         return await self._request(
             "GET",
             "/v1/events/{id}",
@@ -2770,12 +4583,14 @@ class AsyncEventsResource(AsyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["EventExpand"] = None,
+        expand: t.Optional[t.Union["EventExpand", "EventExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
+        limit: t.Optional[int] = None,
         stream: t.Optional[bool] = None,
-        filters: t.Optional[t.Union["EventFilters", t.Dict[str, t.Any]]] = None,
+        filters: t.Optional[
+            t.Union[t.Union["EventFilters", "EventFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Event"]:
         return self._request_page(
             "GET",
@@ -2794,9 +4609,11 @@ class AsyncEventsResource(AsyncResource):
     async def stream(
         self,
         *,
-        expand: t.Optional["EventExpand"] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["EventFilters", t.Dict[str, t.Any]]] = None,
+        expand: t.Optional[t.Union["EventExpand", "EventExpandParam"]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["EventFilters", "EventFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> t.AsyncIterator["Event"]:
         async for item in self._stream(
             "GET",
@@ -2808,7 +4625,9 @@ class AsyncEventsResource(AsyncResource):
 
 
 class AsyncFilesResource(AsyncResource):
-    async def get(self, id: str, *, expand: t.Optional["FileExpand"] = None) -> "File":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["FileExpand", "FileExpandParam"]] = None
+    ) -> "File":
         return await self._request(
             "GET",
             "/v1/files/{id}",
@@ -2829,11 +4648,13 @@ class AsyncFilesResource(AsyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["FileExpand"] = None,
+        expand: t.Optional[t.Union["FileExpand", "FileExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["FileFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["FileFilters", "FileFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["File"]:
         return self._request_page(
             "GET",
@@ -2849,7 +4670,7 @@ class AsyncFilesResource(AsyncResource):
         )
 
     async def create(
-        self, *, file: t.Optional[str] = None, purpose: t.Optional["FilePurpose"] = None
+        self, *, file: t.Optional[FileInput] = None, purpose: t.Optional["FilePurpose"] = None
     ) -> "File":
         return await self._request(
             "POST",
@@ -2872,18 +4693,23 @@ class AsyncInvoicesResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["InvoiceExpand"] = None,
+        expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None,
         customer: t.Optional[str] = None,
-        billing_address: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        billing_address: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_at: t.Optional[int] = None,
-        days_until_due: t.Optional[int] = None,
-        metadata: t.Optional["MetadataInput"] = None,
-        attachments: t.Optional[t.List[str]] = None,
-        memo: t.Optional[str] = None,
-        footer: t.Optional[str] = None,
-        custom_fields: t.Optional[t.Dict[str, t.Any]] = None,
+        discounts: t.Optional[t.Sequence[t.Union["DiscountInput", "DiscountInputParam"]]] = None,
+        due_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        attachments: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        footer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        custom_fields: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
     ) -> "Invoice":
         return await self._request(
@@ -2893,16 +4719,19 @@ class AsyncInvoicesResource(AsyncResource):
             query={"expand": expand},
             body={
                 "customer": customer,
-                "billing_address": billing_address,
-                "shipping_details": shipping_details,
+                "billing_address": _as_nullable(billing_address),
+                "shipping_details": _as_nullable(shipping_details),
                 "line_items": line_items,
-                "due_at": due_at,
-                "days_until_due": days_until_due,
-                "metadata": metadata,
-                "attachments": attachments,
-                "memo": memo,
-                "footer": footer,
-                "custom_fields": custom_fields,
+                "discounts": discounts,
+                "due_at": _as_nullable(due_at),
+                "days_until_due": _as_nullable(days_until_due),
+                "collection_method": collection_method,
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+                "attachments": _as_nullable(attachments),
+                "memo": _as_nullable(memo),
+                "footer": _as_nullable(footer),
+                "custom_fields": _as_nullable(custom_fields),
                 "default_taxes": default_taxes,
             },
         )
@@ -2910,11 +4739,13 @@ class AsyncInvoicesResource(AsyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["InvoiceExpand"] = None,
+        expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["InvoiceFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["InvoiceFilters", "InvoiceFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Invoice"]:
         return self._request_page(
             "GET",
@@ -2937,7 +4768,9 @@ class AsyncInvoicesResource(AsyncResource):
             path_params={"id": id},
         )
 
-    async def get(self, id: str, *, expand: t.Optional["InvoiceExpand"] = None) -> "Invoice":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None
+    ) -> "Invoice":
         return await self._request(
             "GET",
             "/v1/invoices/{id}",
@@ -2950,18 +4783,23 @@ class AsyncInvoicesResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["InvoiceExpand"] = None,
+        expand: t.Optional[t.Union["InvoiceExpand", "InvoiceExpandParam"]] = None,
         customer: t.Optional[str] = None,
-        billing_address: t.Optional[t.Dict[str, t.Any]] = None,
-        shipping_details: t.Optional[t.Dict[str, t.Any]] = None,
+        billing_address: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         line_items: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        due_at: t.Optional[int] = None,
-        days_until_due: t.Optional[int] = None,
-        metadata: t.Optional["MetadataInput"] = None,
-        attachments: t.Optional[t.List[str]] = None,
-        memo: t.Optional[str] = None,
-        footer: t.Optional[str] = None,
-        custom_fields: t.Optional[t.Dict[str, t.Any]] = None,
+        discounts: t.Optional[t.Sequence[t.Union["DiscountInput", "DiscountInputParam"]]] = None,
+        due_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        attachments: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        memo: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        footer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        custom_fields: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
         default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
     ) -> "Invoice":
         return await self._request(
@@ -2972,16 +4810,19 @@ class AsyncInvoicesResource(AsyncResource):
             query={"expand": expand},
             body={
                 "customer": customer,
-                "billing_address": billing_address,
-                "shipping_details": shipping_details,
+                "billing_address": _as_nullable(billing_address),
+                "shipping_details": _as_nullable(shipping_details),
                 "line_items": line_items,
-                "due_at": due_at,
-                "days_until_due": days_until_due,
-                "metadata": metadata,
-                "attachments": attachments,
-                "memo": memo,
-                "footer": footer,
-                "custom_fields": custom_fields,
+                "discounts": discounts,
+                "due_at": _as_nullable(due_at),
+                "days_until_due": _as_nullable(days_until_due),
+                "collection_method": collection_method,
+                "default_payment_method": _as_nullable(default_payment_method),
+                "metadata": _as_nullable(metadata),
+                "attachments": _as_nullable(attachments),
+                "memo": _as_nullable(memo),
+                "footer": _as_nullable(footer),
+                "custom_fields": _as_nullable(custom_fields),
                 "default_taxes": default_taxes,
             },
         )
@@ -3010,7 +4851,7 @@ class AsyncInvoicesResource(AsyncResource):
             path_params={"id": id},
         )
 
-    async def pdf(self, id: t.Union[str, t.Literal["preview"]]) -> t.Any:
+    async def pdf(self, id: str) -> t.Any:
         return await self._request(
             "GET",
             "/v1/invoices/{id}/pdf",
@@ -3026,13 +4867,15 @@ class AsyncInvoicesResource(AsyncResource):
             path_params={"id": id},
         )
 
-    async def send(self, id: str, *, email: t.Optional[str] = None) -> "Invoice":
+    async def send(
+        self, id: str, *, email: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN
+    ) -> "Invoice":
         return await self._request(
             "POST",
             "/v1/invoices/{id}/send",
             cast_to=Invoice,
             path_params={"id": id},
-            body={"email": email},
+            body={"email": _as_nullable(email)},
         )
 
     async def void(self, id: str) -> "Invoice":
@@ -3062,7 +4905,8 @@ class AsyncPaymentMethodsResource(AsyncResource):
         *,
         expand: t.Optional[t.Dict[str, t.Any]] = None,
         billing_details: t.Optional[t.Dict[str, t.Any]] = None,
-        customer: t.Optional[str] = None,
+        customer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        allow_redisplay: t.Optional["PaymentMethodAllowRedisplay"] = None,
     ) -> "PaymentMethod":
         return await self._request(
             "PATCH",
@@ -3070,7 +4914,11 @@ class AsyncPaymentMethodsResource(AsyncResource):
             cast_to=PaymentMethod,
             path_params={"id": id},
             query={"expand": expand},
-            body={"billing_details": billing_details, "customer": customer},
+            body={
+                "billing_details": billing_details,
+                "customer": _as_nullable(customer),
+                "allow_redisplay": allow_redisplay,
+            },
         )
 
     def list(
@@ -3079,8 +4927,12 @@ class AsyncPaymentMethodsResource(AsyncResource):
         expand: t.Optional[t.Dict[str, t.Any]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["PaymentMethodFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[
+                t.Union["PaymentMethodFilters", "PaymentMethodFiltersParam"], t.Dict[str, t.Any]
+            ]
+        ] = None,
     ) -> AsyncPaginator["PaymentMethod"]:
         return self._request_page(
             "GET",
@@ -3108,15 +4960,22 @@ class AsyncPaymentsResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["PaymentExpand"] = None,
+        expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None,
         amount: t.Optional[int] = None,
         capture_method: t.Optional[t.Literal["automatic", "manual"]] = None,
-        customer: t.Optional[str] = None,
-        description: t.Optional[str] = None,
-        invoice: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
-        payment_method: t.Optional[t.Union[str, "PaymentMethodCreate"]] = None,
-        statement_descriptor: t.Optional[str] = None,
+        customer: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        invoice: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        mandate_data: t.Optional[t.Dict[str, t.Any]] = None,
+        off_session: t.Optional[bool] = None,
+        recurring: t.Optional[bool] = None,
+        payment_method: t.Optional[
+            t.Union[str, t.Union["PaymentMethodCreate", "PaymentMethodCreateParam"]]
+        ] = None,
+        statement_descriptor: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
     ) -> "Payment":
         return await self._request(
             "POST",
@@ -3126,23 +4985,28 @@ class AsyncPaymentsResource(AsyncResource):
             body={
                 "amount": amount,
                 "capture_method": capture_method,
-                "customer": customer,
-                "description": description,
-                "invoice": invoice,
-                "metadata": metadata,
+                "customer": _as_nullable(customer),
+                "description": _as_nullable(description),
+                "invoice": _as_nullable(invoice),
+                "metadata": _as_nullable(metadata),
+                "mandate_data": mandate_data,
+                "off_session": off_session,
+                "recurring": recurring,
                 "payment_method": payment_method,
-                "statement_descriptor": statement_descriptor,
+                "statement_descriptor": _as_nullable(statement_descriptor),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["PaymentExpand"] = None,
+        expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["PaymentFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["PaymentFilters", "PaymentFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Payment"]:
         return self._request_page(
             "GET",
@@ -3157,7 +5021,9 @@ class AsyncPaymentsResource(AsyncResource):
             },
         )
 
-    async def get(self, id: str, *, expand: t.Optional["PaymentExpand"] = None) -> "Payment":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None
+    ) -> "Payment":
         return await self._request(
             "GET",
             "/v1/payments/{id}",
@@ -3170,8 +5036,10 @@ class AsyncPaymentsResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["PaymentExpand"] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        expand: t.Optional[t.Union["PaymentExpand", "PaymentExpandParam"]] = None,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Payment":
         return await self._request(
             "PATCH",
@@ -3179,7 +5047,7 @@ class AsyncPaymentsResource(AsyncResource):
             cast_to=Payment,
             path_params={"id": id},
             query={"expand": expand},
-            body={"metadata": metadata},
+            body={"metadata": _as_nullable(metadata)},
         )
 
     async def capture(self, id: str) -> "Payment":
@@ -3203,13 +5071,18 @@ class AsyncPricesResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["PriceExpand"] = None,
+        expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None,
         product: t.Optional[str] = None,
-        active: t.Optional[bool] = None,
-        description: t.Optional[str] = None,
+        active: t.Union[t.Optional[bool], NotGiven] = NOT_GIVEN,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
         amount: t.Optional[int] = None,
-        type: t.Optional[t.Literal["one_time"]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        type: t.Optional[t.Literal["one_time", "recurring"]] = None,
+        recurring: t.Union[
+            t.Optional[t.Union["PriceRecurringInput", "PriceRecurringInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Price":
         return await self._request(
             "POST",
@@ -3218,22 +5091,25 @@ class AsyncPricesResource(AsyncResource):
             query={"expand": expand},
             body={
                 "product": product,
-                "active": active,
-                "description": description,
+                "active": _as_nullable(active),
+                "name": _as_nullable(name),
                 "amount": amount,
                 "type": type,
-                "metadata": metadata,
+                "recurring": _as_nullable(recurring),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["PriceExpand"] = None,
+        expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["PriceFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["PriceFilters", "PriceFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Price"]:
         return self._request_page(
             "GET",
@@ -3248,7 +5124,9 @@ class AsyncPricesResource(AsyncResource):
             },
         )
 
-    async def get(self, id: str, *, expand: t.Optional["PriceExpand"] = None) -> "Price":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None
+    ) -> "Price":
         return await self._request(
             "GET",
             "/v1/prices/{id}",
@@ -3261,10 +5139,12 @@ class AsyncPricesResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["PriceExpand"] = None,
+        expand: t.Optional[t.Union["PriceExpand", "PriceExpandParam"]] = None,
         active: t.Optional[bool] = None,
-        description: t.Optional[str] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        name: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Price":
         return await self._request(
             "PATCH",
@@ -3272,7 +5152,7 @@ class AsyncPricesResource(AsyncResource):
             cast_to=Price,
             path_params={"id": id},
             query={"expand": expand},
-            body={"active": active, "description": description, "metadata": metadata},
+            body={"active": active, "name": _as_nullable(name), "metadata": _as_nullable(metadata)},
         )
 
 
@@ -3280,12 +5160,16 @@ class AsyncProductsResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["ProductExpand"] = None,
+        expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None,
         name: t.Optional[str] = None,
-        description: t.Optional[str] = None,
-        active: t.Optional[bool] = None,
-        images: t.Optional[t.List[str]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        sku: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        attributes: t.Optional[t.Union["ProductAttributes", "ProductAttributesParam"]] = None,
+        active: t.Union[t.Optional[bool], NotGiven] = NOT_GIVEN,
+        images: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Product":
         return await self._request(
             "POST",
@@ -3294,21 +5178,25 @@ class AsyncProductsResource(AsyncResource):
             query={"expand": expand},
             body={
                 "name": name,
-                "description": description,
-                "active": active,
-                "images": images,
-                "metadata": metadata,
+                "description": _as_nullable(description),
+                "sku": _as_nullable(sku),
+                "attributes": attributes,
+                "active": _as_nullable(active),
+                "images": _as_nullable(images),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["ProductExpand"] = None,
+        expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["ProductFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["ProductFilters", "ProductFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Product"]:
         return self._request_page(
             "GET",
@@ -3331,7 +5219,9 @@ class AsyncProductsResource(AsyncResource):
             path_params={"id": id},
         )
 
-    async def get(self, id: str, *, expand: t.Optional["ProductExpand"] = None) -> "Product":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None
+    ) -> "Product":
         return await self._request(
             "GET",
             "/v1/products/{id}",
@@ -3344,13 +5234,17 @@ class AsyncProductsResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["ProductExpand"] = None,
+        expand: t.Optional[t.Union["ProductExpand", "ProductExpandParam"]] = None,
         name: t.Optional[str] = None,
-        description: t.Optional[str] = None,
+        description: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        sku: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        attributes: t.Optional[t.Union["ProductAttributes", "ProductAttributesParam"]] = None,
         active: t.Optional[bool] = None,
-        default_price: t.Optional[str] = None,
-        images: t.Optional[t.List[str]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        default_price: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        images: t.Union[t.Optional[t.List[str]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "Product":
         return await self._request(
             "PATCH",
@@ -3360,17 +5254,21 @@ class AsyncProductsResource(AsyncResource):
             query={"expand": expand},
             body={
                 "name": name,
-                "description": description,
+                "description": _as_nullable(description),
+                "sku": _as_nullable(sku),
+                "attributes": attributes,
                 "active": active,
-                "default_price": default_price,
-                "images": images,
-                "metadata": metadata,
+                "default_price": _as_nullable(default_price),
+                "images": _as_nullable(images),
+                "metadata": _as_nullable(metadata),
             },
         )
 
 
 class AsyncRefundsResource(AsyncResource):
-    async def get(self, id: str, *, expand: t.Optional["RefundExpand"] = None) -> "Refund":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["RefundExpand", "RefundExpandParam"]] = None
+    ) -> "Refund":
         return await self._request(
             "GET",
             "/v1/refunds/{id}",
@@ -3382,11 +5280,13 @@ class AsyncRefundsResource(AsyncResource):
     def list(
         self,
         *,
-        expand: t.Optional["RefundExpand"] = None,
+        expand: t.Optional[t.Union["RefundExpand", "RefundExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["RefundFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["RefundFilters", "RefundFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["Refund"]:
         return self._request_page(
             "GET",
@@ -3404,7 +5304,7 @@ class AsyncRefundsResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["RefundExpand"] = None,
+        expand: t.Optional[t.Union["RefundExpand", "RefundExpandParam"]] = None,
         payment: t.Optional[str] = None,
         amount: t.Optional[int] = None,
     ) -> "Refund":
@@ -3418,7 +5318,9 @@ class AsyncRefundsResource(AsyncResource):
 
 
 class AsyncRequestsResource(AsyncResource):
-    async def get(self, id: str, *, expand: t.Optional["RequestExpand"] = None) -> "Request":
+    async def get(
+        self, id: str, *, expand: t.Optional[t.Union["RequestExpand", "RequestExpandParam"]] = None
+    ) -> "Request":
         return await self._request(
             "GET",
             "/v1/requests/{id}",
@@ -3428,15 +5330,75 @@ class AsyncRequestsResource(AsyncResource):
         )
 
 
+class AsyncMandatesResource(AsyncResource):
+    async def create(
+        self,
+        *,
+        payment_method: t.Optional[str] = None,
+        customer_acceptance: t.Optional["MandateCustomerAcceptanceInput"] = None,
+        authorization_text: t.Optional[str] = None,
+    ) -> "Mandate":
+        return await self._request(
+            "POST",
+            "/v1/mandates",
+            cast_to=Mandate,
+            body={
+                "payment_method": payment_method,
+                "customer_acceptance": customer_acceptance,
+                "authorization_text": authorization_text,
+            },
+        )
+
+    def list(
+        self,
+        *,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["MandateFilters", "MandateFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
+    ) -> AsyncPaginator["Mandate"]:
+        return self._request_page(
+            "GET",
+            "/v1/mandates",
+            item_type=Mandate,
+            query={
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    async def get(self, id: str) -> "Mandate":
+        return await self._request(
+            "GET",
+            "/v1/mandates/{id}",
+            cast_to=Mandate,
+            path_params={"id": id},
+        )
+
+    async def revoke(self, id: str) -> "Mandate":
+        return await self._request(
+            "POST",
+            "/v1/mandates/{id}/revoke",
+            cast_to=Mandate,
+            path_params={"id": id},
+        )
+
+
 class AsyncShippingRatesResource(AsyncResource):
     async def create(
         self,
         *,
-        expand: t.Optional["ShippingRateExpand"] = None,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
         display_name: t.Optional[str] = None,
         amount: t.Optional[int] = None,
-        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        delivery_estimate: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "ShippingRate":
         return await self._request(
             "POST",
@@ -3446,19 +5408,21 @@ class AsyncShippingRatesResource(AsyncResource):
             body={
                 "display_name": display_name,
                 "amount": amount,
-                "delivery_estimate": delivery_estimate,
-                "metadata": metadata,
+                "delivery_estimate": _as_nullable(delivery_estimate),
+                "metadata": _as_nullable(metadata),
             },
         )
 
     def list(
         self,
         *,
-        expand: t.Optional["ShippingRateExpand"] = None,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
         ending_before: t.Optional[str] = None,
         starting_after: t.Optional[str] = None,
-        limit: t.Optional[float] = None,
-        filters: t.Optional[t.Union["ShippingRateFilters", t.Dict[str, t.Any]]] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["ShippingRateFilters", "ShippingRateFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
     ) -> AsyncPaginator["ShippingRate"]:
         return self._request_page(
             "GET",
@@ -3474,7 +5438,10 @@ class AsyncShippingRatesResource(AsyncResource):
         )
 
     async def get(
-        self, id: str, *, expand: t.Optional["ShippingRateExpand"] = None
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
     ) -> "ShippingRate":
         return await self._request(
             "GET",
@@ -3488,11 +5455,13 @@ class AsyncShippingRatesResource(AsyncResource):
         self,
         id: str,
         *,
-        expand: t.Optional["ShippingRateExpand"] = None,
+        expand: t.Optional[t.Union["ShippingRateExpand", "ShippingRateExpandParam"]] = None,
         active: t.Optional[bool] = None,
         display_name: t.Optional[str] = None,
-        delivery_estimate: t.Optional[t.Dict[str, t.Any]] = None,
-        metadata: t.Optional["MetadataInput"] = None,
+        delivery_estimate: t.Union[t.Optional[t.Dict[str, t.Any]], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
     ) -> "ShippingRate":
         return await self._request(
             "PATCH",
@@ -3503,18 +5472,277 @@ class AsyncShippingRatesResource(AsyncResource):
             body={
                 "active": active,
                 "display_name": display_name,
-                "delivery_estimate": delivery_estimate,
-                "metadata": metadata,
+                "delivery_estimate": _as_nullable(delivery_estimate),
+                "metadata": _as_nullable(metadata),
             },
         )
 
 
+class AsyncSubscriptionsResource(AsyncResource):
+    async def create(
+        self,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        customer: t.Optional[str] = None,
+        items: t.Optional[
+            t.Sequence[t.Union["SubscriptionItemCreate", "SubscriptionItemCreateParam"]]
+        ] = None,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        off_session: t.Optional[bool] = None,
+        payment_behavior: t.Optional["SubscriptionPaymentBehavior"] = None,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        trial_period_days: t.Optional[int] = None,
+        trial_end_at: t.Optional[int] = None,
+        cancel_at: t.Union[t.Optional[t.Union[t.Literal["period_end"], int]], NotGiven] = NOT_GIVEN,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        shipping_rate: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "Subscription":
+        return await self._request(
+            "POST",
+            "/v1/subscriptions",
+            cast_to=Subscription,
+            query={"expand": expand},
+            body={
+                "customer": customer,
+                "items": items,
+                "default_payment_method": _as_nullable(default_payment_method),
+                "collection_method": collection_method,
+                "off_session": off_session,
+                "payment_behavior": payment_behavior,
+                "days_until_due": _as_nullable(days_until_due),
+                "default_taxes": default_taxes,
+                "trial_period_days": trial_period_days,
+                "trial_end_at": trial_end_at,
+                "cancel_at": _as_nullable(cancel_at),
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_rate": _as_nullable(shipping_rate),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+    def list(
+        self,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        ending_before: t.Optional[str] = None,
+        starting_after: t.Optional[str] = None,
+        limit: t.Optional[int] = None,
+        filters: t.Optional[
+            t.Union[t.Union["SubscriptionFilters", "SubscriptionFiltersParam"], t.Dict[str, t.Any]]
+        ] = None,
+    ) -> AsyncPaginator["Subscription"]:
+        return self._request_page(
+            "GET",
+            "/v1/subscriptions",
+            item_type=Subscription,
+            query={
+                "expand": expand,
+                "ending_before": ending_before,
+                "starting_after": starting_after,
+                "limit": limit,
+                "filters": filters,
+            },
+        )
+
+    async def upcoming_invoice(
+        self,
+        id: str,
+        *,
+        items: t.Optional[
+            t.Sequence[t.Union["SubscriptionItemUpdate", "SubscriptionItemUpdateParam"]]
+        ] = None,
+        apply_at: t.Optional["SubscriptionChangeApplyAt"] = None,
+        proration_behavior: t.Optional["SubscriptionProrationBehavior"] = None,
+        proration_at: t.Optional[int] = None,
+    ) -> "UpcomingInvoice":
+        return await self._request(
+            "GET",
+            "/v1/subscriptions/{id}/upcoming_invoice",
+            cast_to=UpcomingInvoice,
+            path_params={"id": id},
+            query={
+                "items": items,
+                "apply_at": apply_at,
+                "proration_behavior": proration_behavior,
+                "proration_at": proration_at,
+            },
+        )
+
+    async def get(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+    ) -> "Subscription":
+        return await self._request(
+            "GET",
+            "/v1/subscriptions/{id}",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+    async def update(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        items: t.Optional[
+            t.Sequence[t.Union["SubscriptionItemUpdate", "SubscriptionItemUpdateParam"]]
+        ] = None,
+        apply_at: t.Optional["SubscriptionChangeApplyAt"] = None,
+        proration_behavior: t.Optional["SubscriptionProrationBehavior"] = None,
+        proration_at: t.Optional[int] = None,
+        payment_behavior: t.Optional["SubscriptionPaymentBehavior"] = None,
+        pending_change: t.Union[t.Optional[None], NotGiven] = NOT_GIVEN,
+        default_payment_method: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        collection_method: t.Optional["InvoiceCollectionMethod"] = None,
+        days_until_due: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+        default_taxes: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        trial_end_at: t.Optional[t.Union[t.Literal["now"], int]] = None,
+        cancel_at: t.Union[t.Optional[t.Union[t.Literal["period_end"], int]], NotGiven] = NOT_GIVEN,
+        cancellation_details: t.Optional[
+            t.Union[
+                "SubscriptionCancellationDetailsInput", "SubscriptionCancellationDetailsInputParam"
+            ]
+        ] = None,
+        shipping_details: t.Union[
+            t.Optional[t.Union["ShippingDetailsInput", "ShippingDetailsInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+        shipping_rate: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        metadata: t.Union[
+            t.Optional[t.Union["MetadataInput", "MetadataInputParam"]], NotGiven
+        ] = NOT_GIVEN,
+    ) -> "Subscription":
+        return await self._request(
+            "PATCH",
+            "/v1/subscriptions/{id}",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={
+                "items": items,
+                "apply_at": apply_at,
+                "proration_behavior": proration_behavior,
+                "proration_at": proration_at,
+                "payment_behavior": payment_behavior,
+                "pending_change": _as_nullable(pending_change),
+                "default_payment_method": _as_nullable(default_payment_method),
+                "collection_method": collection_method,
+                "days_until_due": _as_nullable(days_until_due),
+                "default_taxes": default_taxes,
+                "trial_end_at": trial_end_at,
+                "cancel_at": _as_nullable(cancel_at),
+                "cancellation_details": cancellation_details,
+                "shipping_details": _as_nullable(shipping_details),
+                "shipping_rate": _as_nullable(shipping_rate),
+                "metadata": _as_nullable(metadata),
+            },
+        )
+
+    async def cancel(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        prorate: t.Optional[bool] = None,
+        unused_credit: t.Optional[t.Literal["keep", "refund"]] = None,
+        cancellation_details: t.Optional[
+            t.Union[
+                "SubscriptionCancellationDetailsInput", "SubscriptionCancellationDetailsInputParam"
+            ]
+        ] = None,
+    ) -> "Subscription":
+        return await self._request(
+            "POST",
+            "/v1/subscriptions/{id}/cancel",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={
+                "prorate": prorate,
+                "unused_credit": unused_credit,
+                "cancellation_details": cancellation_details,
+            },
+        )
+
+    async def pause(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+        resumes_at: t.Union[t.Optional[int], NotGiven] = NOT_GIVEN,
+    ) -> "Subscription":
+        return await self._request(
+            "POST",
+            "/v1/subscriptions/{id}/pause",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+            body={"resumes_at": _as_nullable(resumes_at)},
+        )
+
+    async def resume(
+        self,
+        id: str,
+        *,
+        expand: t.Optional[t.Union["SubscriptionExpand", "SubscriptionExpandParam"]] = None,
+    ) -> "Subscription":
+        return await self._request(
+            "POST",
+            "/v1/subscriptions/{id}/resume",
+            cast_to=Subscription,
+            path_params={"id": id},
+            query={"expand": expand},
+        )
+
+
+class AsyncBillingPortalSessionsResource(AsyncResource):
+    async def create(
+        self,
+        *,
+        customer: t.Optional[str] = None,
+        subscription: t.Optional[str] = None,
+        return_url: t.Union[t.Optional[str], NotGiven] = NOT_GIVEN,
+        flow: t.Optional[
+            t.Union["BillingPortalSessionFlowInput", "BillingPortalSessionFlowInputParam"]
+        ] = None,
+    ) -> "BillingPortalSession":
+        return await self._request(
+            "POST",
+            "/v1/billing_portal/sessions",
+            cast_to=BillingPortalSession,
+            body={
+                "customer": customer,
+                "subscription": subscription,
+                "return_url": _as_nullable(return_url),
+                "flow": flow,
+            },
+        )
+
+
+class AsyncBillingPortalResource(AsyncResource):
+    sessions: AsyncBillingPortalSessionsResource
+
+    def __init__(self, client):
+        super().__init__(client)
+        self.sessions = AsyncBillingPortalSessionsResource(client)
+
+
 # --- Client resource mixins ---
 class _SyncResources:
-    checkout: CheckoutResource
     checkout_sessions: CheckoutSessionsResource
     credit_notes: CreditNotesResource
+    customer_balance_transactions: CustomerBalanceTransactionsResource
     customers: CustomersResource
+    applied_discounts: AppliedDiscountsResource
     discounts: DiscountsResource
     disputes: DisputesResource
     events: EventsResource
@@ -3526,14 +5754,18 @@ class _SyncResources:
     products: ProductsResource
     refunds: RefundsResource
     requests: RequestsResource
+    mandates: MandatesResource
     shipping_rates: ShippingRatesResource
+    subscriptions: SubscriptionsResource
+    billing_portal: BillingPortalResource
 
 
 class _AsyncResources:
-    checkout: AsyncCheckoutResource
     checkout_sessions: AsyncCheckoutSessionsResource
     credit_notes: AsyncCreditNotesResource
+    customer_balance_transactions: AsyncCustomerBalanceTransactionsResource
     customers: AsyncCustomersResource
+    applied_discounts: AsyncAppliedDiscountsResource
     discounts: AsyncDiscountsResource
     disputes: AsyncDisputesResource
     events: AsyncEventsResource
@@ -3545,16 +5777,26 @@ class _AsyncResources:
     products: AsyncProductsResource
     refunds: AsyncRefundsResource
     requests: AsyncRequestsResource
+    mandates: AsyncMandatesResource
     shipping_rates: AsyncShippingRatesResource
+    subscriptions: AsyncSubscriptionsResource
+    billing_portal: AsyncBillingPortalResource
 
 
 def build_resources(client, is_async: bool = False) -> None:
-    client.checkout = (AsyncCheckoutResource if is_async else CheckoutResource)(client)
     client.checkout_sessions = (
         AsyncCheckoutSessionsResource if is_async else CheckoutSessionsResource
     )(client)
     client.credit_notes = (AsyncCreditNotesResource if is_async else CreditNotesResource)(client)
+    client.customer_balance_transactions = (
+        AsyncCustomerBalanceTransactionsResource
+        if is_async
+        else CustomerBalanceTransactionsResource
+    )(client)
     client.customers = (AsyncCustomersResource if is_async else CustomersResource)(client)
+    client.applied_discounts = (
+        AsyncAppliedDiscountsResource if is_async else AppliedDiscountsResource
+    )(client)
     client.discounts = (AsyncDiscountsResource if is_async else DiscountsResource)(client)
     client.disputes = (AsyncDisputesResource if is_async else DisputesResource)(client)
     client.events = (AsyncEventsResource if is_async else EventsResource)(client)
@@ -3568,17 +5810,20 @@ def build_resources(client, is_async: bool = False) -> None:
     client.products = (AsyncProductsResource if is_async else ProductsResource)(client)
     client.refunds = (AsyncRefundsResource if is_async else RefundsResource)(client)
     client.requests = (AsyncRequestsResource if is_async else RequestsResource)(client)
+    client.mandates = (AsyncMandatesResource if is_async else MandatesResource)(client)
     client.shipping_rates = (AsyncShippingRatesResource if is_async else ShippingRatesResource)(
+        client
+    )
+    client.subscriptions = (AsyncSubscriptionsResource if is_async else SubscriptionsResource)(
+        client
+    )
+    client.billing_portal = (AsyncBillingPortalResource if is_async else BillingPortalResource)(
         client
     )
 
 
 # Resolve forward references across models.
 List.model_rebuild()
-AddressAutocompleteSuggestion.model_rebuild()
-InvalidRequestError.model_rebuild()
-RateLimitError.model_rebuild()
-ServerError.model_rebuild()
 CheckoutSessionExpand.model_rebuild()
 PaymentExpand.model_rebuild()
 CustomerExpand.model_rebuild()
@@ -3588,14 +5833,18 @@ LineItemExpand.model_rebuild()
 ProductExpand.model_rebuild()
 FileExpand.model_rebuild()
 PriceExpand.model_rebuild()
+AppliedDiscountExpand.model_rebuild()
 DiscountExpand.model_rebuild()
 CreditNoteExpand.model_rebuild()
 CheckoutSession.model_rebuild()
 Customer.model_rebuild()
+ShippingDetails.model_rebuild()
+Address.model_rebuild()
 ExternalSync.model_rebuild()
 Metadata.model_rebuild()
 ShippingRate.model_rebuild()
-Address.model_rebuild()
+ShippingAddressCollection.model_rebuild()
+BillingDetailsCollection.model_rebuild()
 Payment.model_rebuild()
 PaymentMethod.model_rebuild()
 Card.model_rebuild()
@@ -3606,27 +5855,48 @@ Invoice.model_rebuild()
 LineItem.model_rebuild()
 Price.model_rebuild()
 Product.model_rebuild()
+ProductAttributes.model_rebuild()
+PriceRecurring.model_rebuild()
+AppliedDiscount.model_rebuild()
 Discount.model_rebuild()
+TaxAmount.model_rebuild()
 CreditNote.model_rebuild()
 CreditNoteLineItem.model_rebuild()
+CreditNoteRefund.model_rebuild()
+InvalidRequestError.model_rebuild()
+RateLimitError.model_rebuild()
+ServerError.model_rebuild()
 CheckoutSessionFilters.model_rebuild()
 NumberFilter.model_rebuild()
+TimestampFilter.model_rebuild()
+LineItemPriceData.model_rebuild()
+DiscountInput.model_rebuild()
 MetadataInput.model_rebuild()
 IdempotencyError.model_rebuild()
 CreditNoteFilters.model_rebuild()
+CustomerBalanceTransactionExpand.model_rebuild()
+RefundExpand.model_rebuild()
+CustomerBalanceTransaction.model_rebuild()
+Refund.model_rebuild()
+CustomerBalanceTransactionFilters.model_rebuild()
+ShippingDetailsInput.model_rebuild()
 CustomerFilters.model_rebuild()
 StringFilter.model_rebuild()
+AppliedDiscountFilters.model_rebuild()
 DiscountFilters.model_rebuild()
 DisputeFilters.model_rebuild()
 EventExpand.model_rebuild()
 RequestExpand.model_rebuild()
 ApiKeyExpand.model_rebuild()
-OrganizationExpand.model_rebuild()
 Event.model_rebuild()
-Refund.model_rebuild()
+Subscription.model_rebuild()
+SubscriptionItem.model_rebuild()
+SubscriptionCancellationDetails.model_rebuild()
+SubscriptionShippingCost.model_rebuild()
+SubscriptionPendingChange.model_rebuild()
+Mandate.model_rebuild()
 Request.model_rebuild()
 ApiKey.model_rebuild()
-Organization.model_rebuild()
 EventFilters.model_rebuild()
 FileFilters.model_rebuild()
 InvoiceFilters.model_rebuild()
@@ -3635,31 +5905,36 @@ PaymentMethodCardCreate.model_rebuild()
 PaymentMethodCreateBillingDetails.model_rebuild()
 PaymentMethodCreateBillingAddress.model_rebuild()
 CardDetails.model_rebuild()
-PaymentMethodCardEncrypted.model_rebuild()
-EncryptedCardDetails.model_rebuild()
 PaymentMethodUsBankAccountCreate.model_rebuild()
 UsBankAccountDetails.model_rebuild()
-PaymentMethodUsBankAccountEncrypted.model_rebuild()
-EncryptedUsBankAccountDetails.model_rebuild()
+PaymentMethodApplePayCreate.model_rebuild()
+ApplePayDetails.model_rebuild()
+ApplePayPaymentData.model_rebuild()
 PaymentError.model_rebuild()
 PaymentFilters.model_rebuild()
+PriceRecurringInput.model_rebuild()
 PriceFilters.model_rebuild()
 ProductFilters.model_rebuild()
-RefundExpand.model_rebuild()
 RefundFilters.model_rebuild()
+MandateFilters.model_rebuild()
 ShippingRateExpand.model_rebuild()
 ShippingRateFilters.model_rebuild()
-RequestFilters.model_rebuild()
-Stats.model_rebuild()
+SubscriptionExpand.model_rebuild()
+SubscriptionItemCreate.model_rebuild()
+SubscriptionItemUpdate.model_rebuild()
+UpcomingInvoice.model_rebuild()
+UpcomingInvoicePeriod.model_rebuild()
+UpcomingInvoiceLineItem.model_rebuild()
+UpcomingInvoiceProration.model_rebuild()
+SubscriptionFilters.model_rebuild()
+SubscriptionCancellationDetailsInput.model_rebuild()
+BillingPortalSessionFlowInput.model_rebuild()
+BillingPortalSession.model_rebuild()
+BillingPortalSessionFlow.model_rebuild()
 
 __all__ = [
     "Error",
     "List",
-    "CountryCode",
-    "AddressAutocompleteSuggestion",
-    "InvalidRequestError",
-    "RateLimitError",
-    "ServerError",
     "CheckoutSessionExpand",
     "PaymentExpand",
     "CustomerExpand",
@@ -3669,19 +5944,25 @@ __all__ = [
     "ProductExpand",
     "FileExpand",
     "PriceExpand",
+    "AppliedDiscountExpand",
     "DiscountExpand",
     "CreditNoteExpand",
     "CheckoutSession",
     "SessionDeviceType",
     "Customer",
+    "ShippingDetails",
+    "CountryCode",
+    "Address",
     "ExternalSync",
     "Metadata",
     "ShippingRate",
     "DeliveryEstimateUnit",
-    "Address",
+    "ShippingAddressCollection",
+    "BillingDetailsCollection",
     "Payment",
     "PaymentDeclineCode",
     "PaymentMethod",
+    "PaymentMethodAllowRedisplay",
     "Card",
     "UsBankAccount",
     "PaymentStatus",
@@ -3695,33 +5976,68 @@ __all__ = [
     "LineItemType",
     "Price",
     "Product",
+    "ProductAttributes",
+    "PriceRecurring",
+    "RecurringInterval",
+    "AppliedDiscount",
     "Discount",
+    "TaxAmount",
     "InvoiceStatus",
+    "InvoiceCollectionMethod",
+    "InvoiceBillingReason",
     "CreditNote",
     "CreditNoteStatus",
+    "CreditNoteReason",
     "CreditNoteLineItem",
+    "CreditNoteRefund",
     "SessionMode",
     "SessionStatus",
     "SessionSubmitLabel",
+    "InvalidRequestError",
+    "RateLimitError",
+    "ServerError",
     "CheckoutSessionFilters",
     "NumberFilter",
+    "TimestampFilter",
+    "LineItemPriceData",
+    "DiscountInput",
+    "ShippingAddressCollectionInput",
+    "BillingDetailsCollectionInput",
     "MetadataInput",
     "IdempotencyError",
+    "IdempotencyErrorCode",
+    "CreditNoteLineItemCreate",
     "CreditNoteFilters",
+    "CustomerBalanceTransactionExpand",
+    "RefundExpand",
+    "CustomerBalanceTransaction",
+    "CustomerBalanceTransactionType",
+    "Refund",
+    "RefundStatus",
+    "CustomerBalanceTransactionFilters",
+    "ShippingDetailsInput",
     "CustomerFilters",
     "StringFilter",
+    "AppliedDiscountFilters",
     "DiscountFilters",
+    "BooleanFilter",
     "DisputeFilters",
     "EventExpand",
     "RequestExpand",
     "ApiKeyExpand",
-    "OrganizationExpand",
     "Event",
-    "Refund",
-    "RefundStatus",
+    "Subscription",
+    "SubscriptionStatus",
+    "SubscriptionItem",
+    "SubscriptionCancellationDetails",
+    "SubscriptionCancellationReason",
+    "SubscriptionCancellationFeedback",
+    "SubscriptionShippingCost",
+    "SubscriptionPendingChange",
+    "Mandate",
+    "MandateStatus",
     "Request",
     "ApiKey",
-    "Organization",
     "EventType",
     "EventContext",
     "EventFilters",
@@ -3729,31 +6045,100 @@ __all__ = [
     "FileFilters",
     "InvoiceFilters",
     "PaymentMethodFilters",
-    "BooleanFilter",
     "PaymentMethodCreate",
     "PaymentMethodCardCreate",
     "PaymentMethodCreateBillingDetails",
     "PaymentMethodCreateBillingAddress",
     "CardDetails",
     "SetupFutureUsage",
-    "PaymentMethodCardEncrypted",
-    "EncryptedCardDetails",
     "PaymentMethodUsBankAccountCreate",
     "UsBankAccountDetails",
-    "PaymentMethodUsBankAccountEncrypted",
-    "EncryptedUsBankAccountDetails",
+    "PaymentMethodApplePayCreate",
+    "ApplePayDetails",
+    "ApplePayPaymentData",
     "PaymentError",
     "PaymentFilters",
+    "PriceRecurringInput",
     "PriceFilters",
     "ProductFilters",
-    "RefundExpand",
     "RefundFilters",
+    "MandateCustomerAcceptanceInput",
+    "MandateFilters",
     "ShippingRateExpand",
     "ShippingRateFilters",
-    "StatisticQuery",
-    "StatisticAggregationType",
-    "StatisticTimeInterval",
-    "RequestFilters",
-    "Stats",
-    "build_resources",
+    "SubscriptionExpand",
+    "SubscriptionItemCreate",
+    "SubscriptionPaymentBehavior",
+    "SubscriptionItemUpdate",
+    "SubscriptionChangeApplyAt",
+    "SubscriptionProrationBehavior",
+    "UpcomingInvoice",
+    "UpcomingInvoicePeriod",
+    "UpcomingInvoiceLineItem",
+    "UpcomingInvoiceProration",
+    "SubscriptionFilters",
+    "SubscriptionCancellationDetailsInput",
+    "BillingPortalSessionFlowInput",
+    "BillingPortalSession",
+    "BillingPortalSessionFlow",
+    "CheckoutSessionExpandParam",
+    "PaymentExpandParam",
+    "CustomerExpandParam",
+    "DisputeExpandParam",
+    "InvoiceExpandParam",
+    "LineItemExpandParam",
+    "ProductExpandParam",
+    "FileExpandParam",
+    "PriceExpandParam",
+    "AppliedDiscountExpandParam",
+    "DiscountExpandParam",
+    "CreditNoteExpandParam",
+    "ProductAttributesParam",
+    "CheckoutSessionFiltersParam",
+    "NumberFilterParam",
+    "TimestampFilterParam",
+    "LineItemPriceDataParam",
+    "DiscountInputParam",
+    "MetadataInputParam",
+    "CreditNoteFiltersParam",
+    "CustomerBalanceTransactionExpandParam",
+    "RefundExpandParam",
+    "CustomerBalanceTransactionFiltersParam",
+    "ShippingDetailsInputParam",
+    "CustomerFiltersParam",
+    "StringFilterParam",
+    "AppliedDiscountFiltersParam",
+    "DiscountFiltersParam",
+    "DisputeFiltersParam",
+    "EventExpandParam",
+    "RequestExpandParam",
+    "ApiKeyExpandParam",
+    "EventFiltersParam",
+    "FileFiltersParam",
+    "InvoiceFiltersParam",
+    "PaymentMethodFiltersParam",
+    "PaymentMethodCreateParam",
+    "PaymentMethodCardCreateParam",
+    "PaymentMethodCreateBillingDetailsParam",
+    "PaymentMethodCreateBillingAddressParam",
+    "CardDetailsParam",
+    "PaymentMethodUsBankAccountCreateParam",
+    "UsBankAccountDetailsParam",
+    "PaymentMethodApplePayCreateParam",
+    "ApplePayDetailsParam",
+    "ApplePayPaymentDataParam",
+    "PaymentFiltersParam",
+    "PriceRecurringInputParam",
+    "PriceFiltersParam",
+    "ProductFiltersParam",
+    "RefundFiltersParam",
+    "MandateFiltersParam",
+    "ShippingRateExpandParam",
+    "ShippingRateFiltersParam",
+    "SubscriptionExpandParam",
+    "SubscriptionItemCreateParam",
+    "SubscriptionItemUpdateParam",
+    "SubscriptionFiltersParam",
+    "SubscriptionCancellationDetailsInputParam",
+    "BillingPortalSessionFlowInputParam",
 ]
