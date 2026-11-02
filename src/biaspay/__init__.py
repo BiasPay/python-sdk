@@ -29,10 +29,10 @@ from ._exceptions import (
     ServerError,
 )
 from ._pagination import AsyncPage, SyncPage
-from ._transport import BiasFile
+from ._transport import BiasFile, _sdk_version
 from ._types import NOT_GIVEN, FileInput, NotGiven
 
-__version__ = "1.0.0"
+__version__ = _sdk_version()
 
 __all__ = [
     "Bias",

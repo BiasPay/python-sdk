@@ -1,9 +1,9 @@
 [project]
 name = "biaspay"
-version = "2.0.0"
+version = "2.1.0"
 description = "Python client for the Bias API"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Bias" }]
 keywords = ["bias", "biaspay", "payments", "api", "sdk"]
@@ -36,4 +36,4 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
